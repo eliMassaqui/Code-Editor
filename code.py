@@ -1,12 +1,13 @@
 import sys
 import subprocess
 import os
+import time
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit, 
                              QPushButton, QVBoxLayout, QHBoxLayout, QWidget, 
                              QSplitter, QPlainTextEdit, QFileDialog, QStatusBar,
-                             QListWidget, QStackedWidget, QTreeView)
+                             QListWidget, QStackedWidget, QTreeView, QSplashScreen)
 from PyQt6.QtGui import (QFont, QSyntaxHighlighter, QTextCharFormat, QColor, 
-                         QTextCursor, QIcon, QFileSystemModel)
+                         QTextCursor, QIcon, QFileSystemModel, QLinearGradient, QPainter, QBrush, QPixmap)
 from PyQt6.QtCore import Qt, QRegularExpression, QThread, pyqtSignal, QSize
 
 # --- CONFIGURAÇÃO DO TEMA ---
@@ -18,6 +19,40 @@ COLOR_CONSOLE = "#050a0f"
 COLOR_ACCENT = "#3498db"
 COLOR_TEXT = "#d1dce8"
 
+# --- CLASSE DA SPLASH SCREEN ---
+class WandiSplash(QSplashScreen):
+    def __init__(self):
+        super().__init__()
+        self.setFixedSize(1280, 720)
+        
+        # Criando o fundo com gradiente
+        pixmap = QPixmap(self.size())
+        painter = QPainter(pixmap)
+
+        # Gradiente Linear: Azul Escuro para Preto
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        gradient.setColorAt(0.0, QColor("#33B4FF")) # Azul
+        gradient.setColorAt(1.0, QColor("#132E99")) # Preto
+
+        painter.setBrush(QBrush(gradient))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRect(0, 0, self.width(), self.height())
+
+        # Desenha o nome "Wandi Code"
+        painter.setPen(QColor("#ffffff"))
+        font = QFont("Segoe UI", 40, QFont.Weight.Bold)
+        painter.setFont(font)
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Wandi Code")
+
+        # Pequeno subtexto de carregamento
+        painter.setFont(QFont("Segoe UI", 10))
+        painter.setPen(QColor("#3498db"))
+        painter.drawText(self.rect().adjusted(0, 100, 0, 0), 
+                         Qt.AlignmentFlag.AlignCenter, "Inicializando sistema...")
+
+        painter.end()
+        self.setPixmap(pixmap)
+
 class ExecutorWorker(QThread):
     line_received = pyqtSignal(str)
     finished = pyqtSignal()
@@ -28,7 +63,6 @@ class ExecutorWorker(QThread):
         self.processo = None
 
     def run(self):
-        # Executa o Python em modo não bufferizado (-u) para capturar o output em tempo real
         self.processo = subprocess.Popen(
             [sys.executable, "-u", "-c", self.codigo],
             stdout=subprocess.PIPE,
@@ -62,7 +96,6 @@ class PythonHighlighter(QSyntaxHighlighter):
         super().__init__(document)
         self.rules = []
         
-        # Palavras-chave
         kw_format = QTextCharFormat()
         kw_format.setForeground(QColor("#56b6c2"))
         kw_format.setFontWeight(QFont.Weight.Bold)
@@ -71,13 +104,11 @@ class PythonHighlighter(QSyntaxHighlighter):
         for word in keywords:
             self.rules.append((QRegularExpression(f"\\b{word}\\b"), kw_format))
 
-        # Strings
         str_format = QTextCharFormat()
         str_format.setForeground(QColor("#98c379"))
         self.rules.append((QRegularExpression(r"\".*\""), str_format))
         self.rules.append((QRegularExpression(r"'.*'"), str_format))
 
-        # Comentários
         comm_format = QTextCharFormat()
         comm_format.setForeground(QColor("#5c6370"))
         self.rules.append((QRegularExpression(r"#.*"), comm_format))
@@ -103,7 +134,6 @@ class ConsoleInterativo(QPlainTextEdit):
             cursor = self.textCursor()
             cursor.select(QTextCursor.SelectionType.LineUnderCursor)
             linha = cursor.selectedText()
-            # Envia apenas a última parte (simulando input)
             self.input_enviado.emit(linha)
         super().keyPressEvent(event)
 
@@ -124,7 +154,6 @@ class MeuEditor(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # 1. Activity Bar (Lateral Estreita)
         self.activity_bar = QListWidget()
         self.activity_bar.setFixedWidth(50)
         self.activity_bar.setStyleSheet(f"""
@@ -136,7 +165,6 @@ class MeuEditor(QMainWindow):
         self.activity_bar.addItem("⚙️")
         self.activity_bar.currentRowChanged.connect(self.alternar_sidebar)
 
-        # 2. Sidebar Panel
         self.sidebar_panel = QStackedWidget()
         self.sidebar_panel.setFixedWidth(220)
         self.sidebar_panel.setStyleSheet(f"background-color: {COLOR_SIDEBAR_PANEL}; border-right: 1px solid #1c2d41;")
@@ -155,20 +183,17 @@ class MeuEditor(QMainWindow):
         self.sidebar_panel.addWidget(self.tree)
         self.sidebar_panel.addWidget(QWidget()) 
 
-        # 3. Área Central
         content = QWidget()
         content_layout = QVBoxLayout(content)
         
-        # Toolbar
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(10, 5, 10, 5)
-        self.btn_rodar = self.criar_botao("▶ RUN", self.executar, "#2ecc71")
-        self.btn_parar = self.criar_botao("⏹ STOP", self.parar_execucao, "#e74c3c")
+        self.btn_rodar = self.criar_botao("▶ RUN", self.executar, "#158845")
+        self.btn_parar = self.criar_botao("⏹ STOP", self.parar_execucao, "#74362F")
         toolbar.addWidget(self.btn_rodar)
         toolbar.addWidget(self.btn_parar)
         toolbar.addStretch()
 
-        # Splitter (Editor em cima, Console embaixo)
         splitter = QSplitter(Qt.Orientation.Vertical)
         
         self.editor = QTextEdit()
@@ -182,7 +207,7 @@ class MeuEditor(QMainWindow):
 
         splitter.addWidget(self.editor)
         splitter.addWidget(self.console)
-        splitter.setStretchFactor(0, 3) # Editor ocupa mais espaço
+        splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
 
         content_layout.addLayout(toolbar)
@@ -239,7 +264,6 @@ class MeuEditor(QMainWindow):
 
     def adicionar_ao_console(self, texto):
         self.console.insertPlainText(texto)
-        # Scroll automático
         self.console.moveCursor(QTextCursor.MoveOperation.End)
 
     def parar_execucao(self):
@@ -251,9 +275,26 @@ class MeuEditor(QMainWindow):
         if hasattr(self, 'worker'):
             self.worker.enviar_input(texto)
 
+# --- INICIALIZAÇÃO DO APP ---
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    app.setStyle("Fusion") # Estilo moderno multiplataforma
+    app.setStyle("Fusion")
+
+    # 1. Mostra a Splash Screen primeiro
+    splash = WandiSplash()
+    splash.show()
+    
+    # Processa eventos para garantir que a tela apareça
+    app.processEvents()
+
+    # 2. Cria a janela (isso leva alguns milissegundos)
     janela = MeuEditor()
+    
+    # 3. Pequeno delay para a splash ser visível (opcional)
+    time.sleep(2.5) 
+
+    # 4. Mostra a IDE e fecha a Splash
     janela.show()
+    splash.finish(janela)
+
     sys.exit(app.exec())
