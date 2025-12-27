@@ -140,7 +140,7 @@ class NavegadorWeb(QWidget):
         
         self.browser.setStyleSheet("background-color: #000;")
         self.browser.urlChanged.connect(lambda url: self.url_bar.setText(url.toString()))
-        self.browser.setUrl(QUrl("https://threejs.org")) 
+        self.browser.setUrl(QUrl("https://wandi-webgl.vercel.app")) 
 
         layout.addLayout(nav_bar)
         layout.addWidget(self.browser)
