@@ -139,11 +139,11 @@ class NavegadorWeb(QWidget):
         nav_bar = QHBoxLayout()
         nav_bar.setContentsMargins(5, 5, 5, 5)
         self.url_bar = QLineEdit()
-        self.url_bar.setPlaceholderText("URL...")
+        self.url_bar.setPlaceholderText("URL para teste Three.js (ex: localhost:8080)...")
         self.url_bar.setStyleSheet(f"background-color: {COLOR_SIDEBAR_PANEL}; color: white; padding: 4px; border: 1px solid #333;")
         self.url_bar.returnPressed.connect(self.carregar_url)
         
-        btn_reload = QPushButton("R")
+        btn_reload = QPushButton("⟳")
         btn_reload.setFixedWidth(30)
         btn_reload.setStyleSheet(f"background-color: {COLOR_ACCENT}; color: white; border: none;")
         btn_reload.clicked.connect(lambda: self.browser.reload())
@@ -151,10 +151,21 @@ class NavegadorWeb(QWidget):
         nav_bar.addWidget(self.url_bar)
         nav_bar.addWidget(btn_reload)
         
+        # Inicializa o Browser
         self.browser = QWebEngineView()
-        self.browser.setStyleSheet("background-color: white;")
+        
+        # --- CONFIGURAÇÕES CRÍTICAS PARA THREE.JS ---
+        settings = self.browser.page().settings()
+        settings.setAttribute(settings.WebAttribute.WebGLEnabled, True)
+        settings.setAttribute(settings.WebAttribute.Accelerated2dCanvasEnabled, True)
+        settings.setAttribute(settings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        settings.setAttribute(settings.WebAttribute.LocalStorageEnabled, True)
+        
+        self.browser.setStyleSheet("background-color: #000;") # Fundo preto evita "flash" branco no Three.js
         self.browser.urlChanged.connect(lambda url: self.url_bar.setText(url.toString()))
-        self.browser.setUrl(QUrl("https://www.google.com"))
+        
+        # Se você estiver rodando um servidor local para o Three.js, mude aqui:
+        self.browser.setUrl(QUrl("https://threejs.org")) 
 
         layout.addLayout(nav_bar)
         layout.addWidget(self.browser)
