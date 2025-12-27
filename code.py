@@ -18,45 +18,70 @@ COLOR_CONSOLE = "#050a0f"
 COLOR_ACCENT = "#3498db"
 COLOR_TEXT = "#d1dce8"
 
-# ... (As classes PythonHighlighter, ConsoleInterativo e ExecutorWorker permanecem as mesmas)
-
 class ExecutorWorker(QThread):
     line_received = pyqtSignal(str)
     finished = pyqtSignal()
+
     def __init__(self, codigo):
         super().__init__()
         self.codigo = codigo
         self.processo = None
+
     def run(self):
-        self.processo = subprocess.Popen([sys.executable, "-u", "-c", self.codigo],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE, text=True, bufsize=1)
-        for linha in self.processo.stdout: self.line_received.emit(linha)
+        # Executa o Python em modo não bufferizado (-u) para capturar o output em tempo real
+        self.processo = subprocess.Popen(
+            [sys.executable, "-u", "-c", self.codigo],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        )
+        
+        for linha in self.processo.stdout:
+            self.line_received.emit(linha)
+            
         self.processo.wait()
         self.finished.emit()
+
     def stop(self):
-        if self.processo: self.processo.terminate()
+        if self.processo:
+            self.processo.terminate()
+
     def enviar_input(self, texto):
         if self.processo and self.processo.poll() is None:
-            self.processo.stdin.write(texto + "\n")
-            self.processo.stdin.flush()
+            try:
+                self.processo.stdin.write(texto + "\n")
+                self.processo.stdin.flush()
+            except Exception as e:
+                self.line_received.emit(f"\nErro de Input: {str(e)}\n")
 
 class PythonHighlighter(QSyntaxHighlighter):
     def __init__(self, document):
         super().__init__(document)
         self.rules = []
+        
+        # Palavras-chave
         kw_format = QTextCharFormat()
         kw_format.setForeground(QColor("#56b6c2"))
         kw_format.setFontWeight(QFont.Weight.Bold)
-        keywords = ["def", "class", "if", "else", "elif", "for", "while", "return", "import", "from", "print", "input"]
+        keywords = ["def", "class", "if", "else", "elif", "for", "while", "return", 
+                    "import", "from", "print", "input", "try", "except", "with", "as"]
         for word in keywords:
             self.rules.append((QRegularExpression(f"\\b{word}\\b"), kw_format))
+
+        # Strings
         str_format = QTextCharFormat()
         str_format.setForeground(QColor("#98c379"))
-        self.rules.append((QRegularExpression("\".*\""), str_format))
-        self.rules.append((QRegularExpression("'.*'"), str_format))
+        self.rules.append((QRegularExpression(r"\".*\""), str_format))
+        self.rules.append((QRegularExpression(r"'.*'"), str_format))
+
+        # Comentários
         comm_format = QTextCharFormat()
         comm_format.setForeground(QColor("#5c6370"))
-        self.rules.append((QRegularExpression("#.*"), comm_format))
+        self.rules.append((QRegularExpression(r"#.*"), comm_format))
+
     def highlightBlock(self, text):
         for pattern, fmt in self.rules:
             it = pattern.globalMatch(text)
@@ -66,15 +91,19 @@ class PythonHighlighter(QSyntaxHighlighter):
 
 class ConsoleInterativo(QPlainTextEdit):
     input_enviado = pyqtSignal(str)
+
     def __init__(self):
         super().__init__()
         self.setFont(QFont("Consolas", 11))
         self.setStyleSheet(f"background-color: {COLOR_CONSOLE}; color: #82aaff; border: none; padding: 5px;")
+        self.setPlaceholderText("Console de saída e entrada...")
+
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             cursor = self.textCursor()
             cursor.select(QTextCursor.SelectionType.LineUnderCursor)
             linha = cursor.selectedText()
+            # Envia apenas a última parte (simulando input)
             self.input_enviado.emit(linha)
         super().keyPressEvent(event)
 
@@ -95,7 +124,7 @@ class MeuEditor(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # 1. Barra de Ícones lateral (Activity Bar)
+        # 1. Activity Bar (Lateral Estreita)
         self.activity_bar = QListWidget()
         self.activity_bar.setFixedWidth(50)
         self.activity_bar.setStyleSheet(f"""
@@ -107,12 +136,11 @@ class MeuEditor(QMainWindow):
         self.activity_bar.addItem("⚙️")
         self.activity_bar.currentRowChanged.connect(self.alternar_sidebar)
 
-        # 2. Painel da Sidebar (Explorador)
+        # 2. Sidebar Panel
         self.sidebar_panel = QStackedWidget()
         self.sidebar_panel.setFixedWidth(220)
         self.sidebar_panel.setStyleSheet(f"background-color: {COLOR_SIDEBAR_PANEL}; border-right: 1px solid #1c2d41;")
         
-        # Árvore de Arquivos
         self.model = QFileSystemModel()
         self.model.setRootPath(os.getcwd())
         
@@ -120,29 +148,32 @@ class MeuEditor(QMainWindow):
         self.tree.setModel(self.model)
         self.tree.setRootIndex(self.model.index(os.getcwd()))
         self.tree.setHeaderHidden(True)
-        self.tree.setColumnHidden(1, True)
-        self.tree.setColumnHidden(2, True)
-        self.tree.setColumnHidden(3, True)
+        for i in range(1, 4): self.tree.setColumnHidden(i, True)
         self.tree.setStyleSheet(f"QTreeView {{ color: {COLOR_TEXT}; border: none; background: transparent; }} QTreeView::item:hover {{ background: #1c2d41; }}")
         self.tree.doubleClicked.connect(self.abrir_clique_duplo)
 
         self.sidebar_panel.addWidget(self.tree)
-        self.sidebar_panel.addWidget(QWidget()) # Placeholder Config
+        self.sidebar_panel.addWidget(QWidget()) 
 
-        # 3. Área Central (Editor e Console)
+        # 3. Área Central
         content = QWidget()
         content_layout = QVBoxLayout(content)
         
+        # Toolbar
         toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(10, 5, 10, 5)
         self.btn_rodar = self.criar_botao("▶ RUN", self.executar, "#2ecc71")
         self.btn_parar = self.criar_botao("⏹ STOP", self.parar_execucao, "#e74c3c")
         toolbar.addWidget(self.btn_rodar)
         toolbar.addWidget(self.btn_parar)
         toolbar.addStretch()
 
+        # Splitter (Editor em cima, Console embaixo)
         splitter = QSplitter(Qt.Orientation.Vertical)
+        
         self.editor = QTextEdit()
         self.editor.setFont(QFont("Consolas", 12))
+        self.editor.setAcceptRichText(False)
         self.editor.setStyleSheet(f"background-color: {COLOR_EDITOR}; color: {COLOR_TEXT}; border: 1px solid #1c2d41; padding: 10px;")
         self.highlighter = PythonHighlighter(self.editor.document())
 
@@ -151,7 +182,8 @@ class MeuEditor(QMainWindow):
 
         splitter.addWidget(self.editor)
         splitter.addWidget(self.console)
-        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(0, 3) # Editor ocupa mais espaço
+        splitter.setStretchFactor(1, 1)
 
         content_layout.addLayout(toolbar)
         content_layout.addWidget(splitter)
@@ -162,11 +194,16 @@ class MeuEditor(QMainWindow):
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.setStyleSheet("color: #5c6370;")
+        self.status_bar.setStyleSheet(f"color: #5c6370; background-color: {COLOR_SIDEBAR_ICO};")
+        self.status_bar.showMessage("Pronto")
 
-    def criar_botao(self, texto, func, cor=COLOR_ACCENT):
+    def criar_botao(self, texto, func, cor):
         btn = QPushButton(texto)
-        btn.setStyleSheet(f"background-color: {cor}; color: white; font-weight: bold; padding: 6px 15px; border-radius: 4px; border: none;")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setStyleSheet(f"""
+            QPushButton {{ background-color: {cor}; color: white; font-weight: bold; padding: 6px 15px; border-radius: 4px; border: none; }}
+            QPushButton:hover {{ opacity: 0.8; }}
+        """)
         btn.clicked.connect(func)
         return btn
 
@@ -180,25 +217,43 @@ class MeuEditor(QMainWindow):
     def abrir_clique_duplo(self, index):
         caminho = self.model.filePath(index)
         if not self.model.isDir(index):
-            with open(caminho, 'r', encoding='utf-8') as f:
-                self.editor.setPlainText(f.read())
-            self.caminho_arquivo = caminho
-            self.status_bar.showMessage(f"Arquivo: {caminho}")
+            try:
+                with open(caminho, 'r', encoding='utf-8') as f:
+                    self.editor.setPlainText(f.read())
+                self.caminho_arquivo = caminho
+                self.status_bar.showMessage(f"Arquivo: {caminho}")
+            except Exception as e:
+                self.status_bar.showMessage(f"Erro ao abrir: {str(e)}")
 
     def executar(self):
+        codigo = self.editor.toPlainText()
+        if not codigo.strip(): return
+        
         self.console.clear()
-        self.worker = ExecutorWorker(self.editor.toPlainText())
-        self.worker.line_received.connect(self.console.insertPlainText)
+        self.status_bar.showMessage("Executando script...")
+        
+        self.worker = ExecutorWorker(codigo)
+        self.worker.line_received.connect(self.adicionar_ao_console)
+        self.worker.finished.connect(lambda: self.status_bar.showMessage("Execução concluída.", 5000))
         self.worker.start()
 
-    def parar_execucao(self):
-        if hasattr(self, 'worker'): self.worker.stop()
+    def adicionar_ao_console(self, texto):
+        self.console.insertPlainText(texto)
+        # Scroll automático
+        self.console.moveCursor(QTextCursor.MoveOperation.End)
 
-    def enviar_input_ao_worker(self, t):
-        if hasattr(self, 'worker'): self.worker.enviar_input(t)
+    def parar_execucao(self):
+        if hasattr(self, 'worker'):
+            self.worker.stop()
+            self.status_bar.showMessage("Processo interrompido.")
+
+    def enviar_input_ao_worker(self, texto):
+        if hasattr(self, 'worker'):
+            self.worker.enviar_input(texto)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setStyle("Fusion") # Estilo moderno multiplataforma
     janela = MeuEditor()
     janela.show()
     sys.exit(app.exec())
