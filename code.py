@@ -6,12 +6,12 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit,
                              QPushButton, QVBoxLayout, QHBoxLayout, QWidget, 
                              QSplitter, QPlainTextEdit, QFileDialog, QStatusBar,
                              QListWidget, QStackedWidget, QTreeView, QSplashScreen,
-                             QTabWidget, QLineEdit, QToolBar) # Adicionado QTabWidget, QLineEdit
+                             QLineEdit, QDockWidget) # Adicionado QDockWidget, removido QTabWidget
 from PyQt6.QtGui import (QFont, QSyntaxHighlighter, QTextCharFormat, QColor, 
-                         QTextCursor, QIcon, QFileSystemModel, QLinearGradient, QPainter, QBrush, QPixmap, QAction)
-from PyQt6.QtCore import Qt, QRegularExpression, QThread, pyqtSignal, QSize, QUrl
+                         QTextCursor, QIcon, QFileSystemModel, QLinearGradient, QPainter, QBrush, QPixmap)
+from PyQt6.QtCore import Qt, QRegularExpression, QThread, pyqtSignal, QUrl
 
-# IMPORTANTE: Importação do motor Web
+# Importação do motor Web
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 # --- CONFIGURAÇÃO DO TEMA ---
@@ -22,9 +22,9 @@ COLOR_EDITOR = "#152233"
 COLOR_CONSOLE = "#050a0f"
 COLOR_ACCENT = "#3498db"
 COLOR_TEXT = "#d1dce8"
-COLOR_TAB_ACTIVE = "#1c2d41"
+COLOR_DOCK_TITLE = "#1c2d41"
 
-# --- CLASSE DA SPLASH SCREEN (Mantida igual) ---
+# --- CLASSE DA SPLASH SCREEN (Mantida) ---
 class WandiSplash(QSplashScreen):
     def __init__(self):
         super().__init__()
@@ -43,11 +43,11 @@ class WandiSplash(QSplashScreen):
         painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Wandi Code")
         painter.setFont(QFont("Segoe UI", 10))
         painter.setPen(QColor("#3498db"))
-        painter.drawText(self.rect().adjusted(0, 100, 0, 0), Qt.AlignmentFlag.AlignCenter, "Carregando WebEngine...")
+        painter.drawText(self.rect().adjusted(0, 100, 0, 0), Qt.AlignmentFlag.AlignCenter, "Inicializando Docks...")
         painter.end()
         self.setPixmap(pixmap)
 
-# --- WORKER DE EXECUÇÃO (Mantido igual) ---
+# --- WORKER DE EXECUÇÃO (Mantido) ---
 class ExecutorWorker(QThread):
     line_received = pyqtSignal(str)
     finished = pyqtSignal()
@@ -84,7 +84,7 @@ class ExecutorWorker(QThread):
             except Exception as e:
                 self.line_received.emit(f"\nErro de Input: {str(e)}\n")
 
-# --- HIGHLIGHTER (Mantido igual) ---
+# --- HIGHLIGHTER (Mantido) ---
 class PythonHighlighter(QSyntaxHighlighter):
     def __init__(self, document):
         super().__init__(document)
@@ -111,7 +111,7 @@ class PythonHighlighter(QSyntaxHighlighter):
                 match = it.next()
                 self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
 
-# --- CONSOLE (Mantido igual) ---
+# --- CONSOLE (Mantido) ---
 class ConsoleInterativo(QPlainTextEdit):
     input_enviado = pyqtSignal(str)
     def __init__(self):
@@ -128,7 +128,7 @@ class ConsoleInterativo(QPlainTextEdit):
             self.input_enviado.emit(linha)
         super().keyPressEvent(event)
 
-# --- NOVO WIDGET: NAVEGADOR WEB ---
+# --- NAVEGADOR WEB (Mantido) ---
 class NavegadorWeb(QWidget):
     def __init__(self):
         super().__init__()
@@ -137,12 +137,13 @@ class NavegadorWeb(QWidget):
         
         # Barra de navegação
         nav_bar = QHBoxLayout()
+        nav_bar.setContentsMargins(5, 5, 5, 5)
         self.url_bar = QLineEdit()
-        self.url_bar.setPlaceholderText("Digite a URL e pressione Enter (ex: https://google.com)")
-        self.url_bar.setStyleSheet(f"background-color: {COLOR_SIDEBAR_PANEL}; color: white; padding: 5px; border: 1px solid #333;")
+        self.url_bar.setPlaceholderText("URL...")
+        self.url_bar.setStyleSheet(f"background-color: {COLOR_SIDEBAR_PANEL}; color: white; padding: 4px; border: 1px solid #333;")
         self.url_bar.returnPressed.connect(self.carregar_url)
         
-        btn_reload = QPushButton("⟳")
+        btn_reload = QPushButton("R")
         btn_reload.setFixedWidth(30)
         btn_reload.setStyleSheet(f"background-color: {COLOR_ACCENT}; color: white; border: none;")
         btn_reload.clicked.connect(lambda: self.browser.reload())
@@ -150,12 +151,9 @@ class NavegadorWeb(QWidget):
         nav_bar.addWidget(self.url_bar)
         nav_bar.addWidget(btn_reload)
         
-        # O Navegador em si
         self.browser = QWebEngineView()
-        self.browser.setStyleSheet("background-color: white;") # Web view geralmente tem fundo branco
+        self.browser.setStyleSheet("background-color: white;")
         self.browser.urlChanged.connect(lambda url: self.url_bar.setText(url.toString()))
-        
-        # Carrega Google por padrão
         self.browser.setUrl(QUrl("https://www.google.com"))
 
         layout.addLayout(nav_bar)
@@ -171,21 +169,28 @@ class NavegadorWeb(QWidget):
 class MeuEditor(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Wandi Code IDE v2.0 - Web Edition")
+        self.setWindowTitle("Wandi Code IDE v3.0 - Dock System")
         self.setGeometry(100, 100, 1200, 800)
         self.caminho_arquivo = None
+        
+        # Habilita o sistema de docking avançado (aninhamento)
+        self.setDockOptions(QMainWindow.DockOption.AnimatedDocks | QMainWindow.DockOption.AllowNestedDocks | QMainWindow.DockOption.AllowTabbedDocks)
+        
         self.init_ui()
 
     def init_ui(self):
-        main_widget = QWidget()
-        main_widget.setStyleSheet(f"background-color: {COLOR_BG};")
-        self.setCentralWidget(main_widget)
+        # 1. Widget Central (O Editor e a Sidebar ficam aqui)
+        # Precisamos de um container central porque a sidebar original era manual
+        central_container = QWidget()
+        central_container.setStyleSheet(f"background-color: {COLOR_BG};")
+        self.setCentralWidget(central_container)
         
-        main_layout = QHBoxLayout(main_widget)
+        # Layout Principal (Horizontal: Sidebar + Editor)
+        main_layout = QHBoxLayout(central_container)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Barra Lateral (Activity Bar)
+        # --- ÁREA ESQUERDA: Activity Bar e Painel de Arquivos ---
         self.activity_bar = QListWidget()
         self.activity_bar.setFixedWidth(50)
         self.activity_bar.setStyleSheet(f"""
@@ -194,17 +199,15 @@ class MeuEditor(QMainWindow):
             QListWidget::item:selected {{ background-color: {COLOR_SIDEBAR_PANEL}; color: {COLOR_ACCENT}; border-left: 2px solid {COLOR_ACCENT}; }}
         """)
         self.activity_bar.addItem("📁")
-        self.activity_bar.addItem("🌐") # Ícone para web (opcional)
-        self.activity_bar.currentRowChanged.connect(self.alternar_sidebar)
+        self.activity_bar.addItem("🌐") # Botão para mostrar/esconder o dock do navegador
+        self.activity_bar.currentRowChanged.connect(self.acao_sidebar)
 
-        # Painel Lateral (Arquivos)
         self.sidebar_panel = QStackedWidget()
         self.sidebar_panel.setFixedWidth(220)
         self.sidebar_panel.setStyleSheet(f"background-color: {COLOR_SIDEBAR_PANEL}; border-right: 1px solid #1c2d41;")
         
         self.model = QFileSystemModel()
         self.model.setRootPath(os.getcwd())
-        
         self.tree = QTreeView()
         self.tree.setModel(self.model)
         self.tree.setRootIndex(self.model.index(os.getcwd()))
@@ -216,24 +219,12 @@ class MeuEditor(QMainWindow):
         self.sidebar_panel.addWidget(self.tree)
         self.sidebar_panel.addWidget(QWidget()) 
 
-        # --- ÁREA CENTRAL COM ABAS ---
-        # Aqui criamos o gerenciador de abas
-        self.tabs = QTabWidget()
-        self.tabs.setDocumentMode(True)
-        self.tabs.setTabPosition(QTabWidget.TabPosition.North)
-        self.tabs.setStyleSheet(f"""
-            QTabWidget::pane {{ border: 1px solid #1c2d41; background: {COLOR_BG}; }}
-            QTabBar::tab {{ background: {COLOR_BG}; color: {COLOR_TEXT}; padding: 8px 20px; }}
-            QTabBar::tab:selected {{ background: {COLOR_TAB_ACTIVE}; border-top: 2px solid {COLOR_ACCENT}; color: white; }}
-            QTabBar::tab:hover {{ background: {COLOR_SIDEBAR_PANEL}; }}
-        """)
-
-        # ABA 1: EDITOR DE CÓDIGO
-        editor_container = QWidget()
-        editor_layout = QVBoxLayout(editor_container)
+        # --- ÁREA CENTRAL: O Editor de Código ---
+        editor_area = QWidget()
+        editor_layout = QVBoxLayout(editor_area)
         editor_layout.setContentsMargins(0,0,0,0)
 
-        # Toolbar do Editor
+        # Toolbar
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(10, 5, 10, 5)
         self.btn_rodar = self.criar_botao("▶ RUN", self.executar, "#158845")
@@ -261,22 +252,39 @@ class MeuEditor(QMainWindow):
         editor_layout.addLayout(toolbar)
         editor_layout.addWidget(splitter_code)
 
-        # ABA 2: NAVEGADOR WEB
-        self.navegador_web = NavegadorWeb()
-
-        # Adicionando as abas
-        self.tabs.addTab(editor_container, "Python Editor")
-        self.tabs.addTab(self.navegador_web, "Navegador Web")
-
-        # Montagem Final do Layout Principal
+        # Adiciona tudo ao layout central
         main_layout.addWidget(self.activity_bar)
         main_layout.addWidget(self.sidebar_panel)
-        main_layout.addWidget(self.tabs) # Central agora é o TabWidget
+        main_layout.addWidget(editor_area)
+
+        # --- DOCK WIDGET: Navegador ---
+        self.setup_browser_dock()
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.setStyleSheet(f"color: #5c6370; background-color: {COLOR_SIDEBAR_ICO};")
         self.status_bar.showMessage("Sistema Pronto")
+
+    def setup_browser_dock(self):
+        # Cria o Dock Widget
+        self.dock_browser = QDockWidget("Navegador Web", self)
+        self.dock_browser.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea | Qt.DockWidgetArea.BottomDockWidgetArea | Qt.DockWidgetArea.LeftDockWidgetArea)
+        
+        # O conteúdo do dock é a nossa classe NavegadorWeb
+        navegador = NavegadorWeb()
+        self.dock_browser.setWidget(navegador)
+        
+        # Estilização da barra de título do dock
+        self.dock_browser.setStyleSheet(f"""
+            QDockWidget {{ border: 1px solid {COLOR_SIDEBAR_PANEL}; }}
+            QDockWidget::title {{ background: {COLOR_DOCK_TITLE}; text-align: center; color: {COLOR_TEXT}; padding: 5px; }}
+        """)
+
+        # Adiciona inicialmente na direita (Lado a Lado)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_browser)
+        
+        # Começa oculto ou visível? Vamos deixar visível
+        self.dock_browser.show()
 
     def criar_botao(self, texto, func, cor):
         btn = QPushButton(texto)
@@ -288,17 +296,23 @@ class MeuEditor(QMainWindow):
         btn.clicked.connect(func)
         return btn
 
-    def alternar_sidebar(self, row):
-        # Lógica simples: se clicar no ícone 0, mostra arquivos. Se for outro, pode esconder ou mostrar outra coisa
+    def acao_sidebar(self, row):
         if row == 0:
+            # Alterna painel de arquivos
             if self.sidebar_panel.isVisible():
                 self.sidebar_panel.hide()
             else:
                 self.sidebar_panel.show()
                 self.sidebar_panel.setCurrentIndex(0)
         elif row == 1:
-            # Atalho rápido: clicar no ícone web muda para a aba do navegador
-            self.tabs.setCurrentIndex(1) 
+            # Alterna visibilidade do Navegador (Dock)
+            if self.dock_browser.isVisible():
+                self.dock_browser.hide()
+            else:
+                self.dock_browser.show()
+            
+            # Limpa seleção para não parecer uma "aba" fixa
+            self.activity_bar.clearSelection()
 
     def abrir_clique_duplo(self, index):
         caminho = self.model.filePath(index)
@@ -308,8 +322,6 @@ class MeuEditor(QMainWindow):
                     self.editor.setPlainText(f.read())
                 self.caminho_arquivo = caminho
                 self.status_bar.showMessage(f"Arquivo: {caminho}")
-                # Foca na aba de código ao abrir arquivo
-                self.tabs.setCurrentIndex(0)
             except Exception as e:
                 self.status_bar.showMessage(f"Erro ao abrir: {str(e)}")
 
@@ -317,8 +329,6 @@ class MeuEditor(QMainWindow):
         codigo = self.editor.toPlainText()
         if not codigo.strip(): return
         
-        # Garante que está vendo a aba de código ao rodar
-        self.tabs.setCurrentIndex(0)
         self.console.clear()
         self.status_bar.showMessage("Executando script...")
         
@@ -342,9 +352,15 @@ class MeuEditor(QMainWindow):
 
 # --- INICIALIZAÇÃO DO APP ---
 if __name__ == "__main__":
-    # Configuração necessária para WebEngine rodar processos de renderização
-    # (às vezes necessário no Windows)
-    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--no-sandbox"
+    # Flags específicas para alta performance gráfica e conectividade
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
+        "--no-sandbox "                  # Essencial para conexões de rede estáveis em modo dev
+        "--ignore-gpu-blocklist "        # Força o WebGL em qualquer hardware
+        "--enable-gpu-rasterization "    # Acelera o desenho de texturas do Three.js
+        "--enable-oop-rasterization "    # Melhora a estabilidade de threads da GPU
+        "--enable-webgl-draft-extensions " # Libera recursos extras para o Three.js
+        "--allow-running-insecure-content" # Caso use WebSockets (ws://) em páginas https
+    )
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
@@ -353,9 +369,7 @@ if __name__ == "__main__":
     splash.show()
     app.processEvents()
 
-    # Inicializa a janela principal
     janela = MeuEditor()
-    
     time.sleep(1.5) 
 
     janela.show()
