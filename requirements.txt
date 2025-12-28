@@ -1,0 +1,12 @@
+# --- Interface Gráfica e Engine Web ---
+PyQt6==6.6.1
+PyQt6-WebEngine==6.6.0
+PyQt6-Qt6==6.6.1
+
+# --- Comunicação com Hardware (Arduino) ---
+pyfirmata2==2.5.0
+pyserial==3.5
+
+# --- Utilitários e Auxiliares ---
+# (Opcional) Para manipulação de dados ou cálculos matemáticos no WebGL
+numpy==1.26.4
