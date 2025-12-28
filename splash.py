@@ -22,7 +22,7 @@ class WandiSplash(QSplashScreen):
         painter.setPen(QColor("#ffffff"))
         font = QFont("Segoe UI", 40, QFont.Weight.Bold)
         painter.setFont(font)
-        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Wandi Code")
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Wandi Studio")
         
         # Subtexto de Carregamento
         painter.setFont(QFont("Segoe UI", 10))
