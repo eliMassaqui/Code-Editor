@@ -3,7 +3,7 @@ import subprocess
 import os
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit, 
                              QPushButton, QVBoxLayout, QHBoxLayout, QWidget, 
-                             QSplitter, QPlainTextEdit, QStatusBar, QFileDialog, QLineEdit)
+                             QSplitter, QPlainTextEdit, QStatusBar, QFileDialog, QLineEdit, QTabWidget)
 from PyQt6.QtGui import (QFont, QSyntaxHighlighter, QTextCharFormat, QColor, 
                          QTextCursor, QAction)
 from PyQt6.QtCore import Qt, QRegularExpression, QThread, pyqtSignal
@@ -88,23 +88,6 @@ class PythonHighlighter(QSyntaxHighlighter):
                 match = it.next()
                 self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
 
-# --- CONSOLE ---
-class ConsoleInterativo(QPlainTextEdit):
-    input_enviado = pyqtSignal(str)
-    def __init__(self):
-        super().__init__()
-        self.setFont(QFont("Consolas", 11))
-        self.setStyleSheet(f"background-color: {COLOR_CONSOLE}; color: #82aaff; border: none; padding: 5px;")
-        self.setPlaceholderText("Console de saída e entrada...")
-
-    def keyPressEvent(self, event):
-        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            cursor = self.textCursor()
-            cursor.select(QTextCursor.SelectionType.LineUnderCursor)
-            linha = cursor.selectedText()
-            self.input_enviado.emit(linha)
-        super().keyPressEvent(event)
-
 # --- JANELA PRINCIPAL ---
 class MeuEditor(QMainWindow):
     def __init__(self):
@@ -133,41 +116,53 @@ class MeuEditor(QMainWindow):
         toolbar.addStretch()
         main_layout.addLayout(toolbar)
 
-        # --- Editor e Área Inferior ---
+        # --- Splitter Principal ---
         splitter_code = QSplitter(Qt.Orientation.Vertical)
         
+        # Editor
         self.editor = QTextEdit()
         self.editor.setFont(QFont("Consolas", 12))
         self.editor.setAcceptRichText(False)
         self.editor.setStyleSheet(f"background-color: {COLOR_EDITOR}; color: {COLOR_TEXT}; border: none; padding: 10px;")
         self.highlighter = PythonHighlighter(self.editor.document())
 
-        # Container Inferior (Serial Input + Console)
-        container_inferior = QWidget()
-        layout_inferior = QVBoxLayout(container_inferior)
-        layout_inferior.setContentsMargins(0, 0, 0, 0)
-        layout_inferior.setSpacing(2)
-
-        # SERIAL INPUT (Para qualquer caractere do teclado)
-        self.serial_input = QLineEdit()
-        self.serial_input.setPlaceholderText("SERIAL INPUT: Digite aqui caracteres para enviar ao Arduino...")
-        self.serial_input.setStyleSheet(f"""
-            background-color: {COLOR_CONSOLE}; 
-            color: #00ff41; 
-            border: 1px solid {COLOR_ACCENT}; 
-            padding: 5px; 
-            font-family: 'Consolas';
+        # --- Sistema de Abas Inferiores ---
+        self.tabs_inferiores = QTabWidget()
+        self.tabs_inferiores.setStyleSheet(f"""
+            QTabWidget::pane {{ border-top: 1px solid #1c2b3d; background: {COLOR_CONSOLE}; }}
+            QTabBar::tab {{ background: {COLOR_BG}; color: {COLOR_TEXT}; padding: 8px 20px; border: 1px solid #1c2b3d; }}
+            QTabBar::tab:selected {{ background: {COLOR_EDITOR}; border-bottom: 2px solid {COLOR_ACCENT}; }}
         """)
+
+        # Aba 1: Output (Console de Sistema)
+        self.console_output = QPlainTextEdit()
+        self.console_output.setReadOnly(True)
+        self.console_output.setFont(QFont("Consolas", 11))
+        self.console_output.setStyleSheet(f"background-color: {COLOR_CONSOLE}; color: #82aaff; border: none; padding: 5px;")
+        self.tabs_inferiores.addTab(self.console_output, "OUTPUT")
+
+        # Aba 2: Serial Monitor
+        container_serial = QWidget()
+        layout_serial = QVBoxLayout(container_serial)
+        layout_serial.setContentsMargins(0, 0, 0, 0)
+        layout_serial.setSpacing(2)
+
+        self.serial_input = QLineEdit()
+        self.serial_input.setPlaceholderText("SERIAL INPUT: Digite caracteres para enviar ao Arduino...")
+        self.serial_input.setStyleSheet(f"background-color: {COLOR_CONSOLE}; color: #00ff41; border: 1px solid {COLOR_ACCENT}; padding: 5px; font-family: 'Consolas';")
         self.serial_input.returnPressed.connect(self.enviar_comando_serial)
 
-        self.console = ConsoleInterativo()
-        self.console.input_enviado.connect(self.enviar_input_ao_worker)
+        self.serial_log = QPlainTextEdit()
+        self.serial_log.setReadOnly(True)
+        self.serial_log.setFont(QFont("Consolas", 11))
+        self.serial_log.setStyleSheet(f"background-color: {COLOR_CONSOLE}; color: #00ff41; border: none; padding: 5px;")
 
-        layout_inferior.addWidget(self.serial_input)
-        layout_inferior.addWidget(self.console)
+        layout_serial.addWidget(self.serial_input)
+        layout_serial.addWidget(self.serial_log)
+        self.tabs_inferiores.addTab(container_serial, "SERIAL MONITOR")
 
         splitter_code.addWidget(self.editor)
-        splitter_code.addWidget(container_inferior)
+        splitter_code.addWidget(self.tabs_inferiores)
         splitter_code.setStretchFactor(0, 3)
         splitter_code.setStretchFactor(1, 1)
         main_layout.addWidget(splitter_code)
@@ -257,32 +252,30 @@ class MeuEditor(QMainWindow):
     def executar(self):
         codigo = self.editor.toPlainText()
         if not codigo.strip(): return
-        self.console.clear()
+        self.console_output.clear()
         self.status_bar.showMessage("Executando...")
+        self.tabs_inferiores.setCurrentIndex(0) # Foco automático no Output
         self.worker = ExecutorWorker(codigo)
-        self.worker.line_received.connect(self.adicionar_ao_console)
+        self.worker.line_received.connect(self.adicionar_ao_output)
         self.worker.finished.connect(lambda: self.status_bar.showMessage("Finalizado.", 5000))
         self.worker.start()
 
-    def adicionar_ao_console(self, texto):
-        self.console.insertPlainText(texto)
-        self.console.moveCursor(QTextCursor.MoveOperation.End)
+    def adicionar_ao_output(self, texto):
+        self.console_output.insertPlainText(texto)
+        self.console_output.moveCursor(QTextCursor.MoveOperation.End)
 
     def parar_execucao(self):
         if hasattr(self, 'worker'):
             self.worker.stop()
             self.status_bar.showMessage("Interrompido.")
 
-    def enviar_input_ao_worker(self, texto):
-        if hasattr(self, 'worker'):
-            self.worker.enviar_input(texto)
-
     def enviar_comando_serial(self):
         comando = self.serial_input.text()
         if comando:
-            self.enviar_input_ao_worker(comando)
-            self.adicionar_ao_console(f"> {comando}\n")
-            self.serial_input.clear()
+            if hasattr(self, 'worker'):
+                self.worker.enviar_input(comando)
+                self.serial_log.insertPlainText(f"> {comando}\n")
+                self.serial_input.clear()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
