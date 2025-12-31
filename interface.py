@@ -8,6 +8,9 @@ from PyQt6.QtGui import (QFont, QSyntaxHighlighter, QTextCharFormat, QColor,
                          QTextCursor, QAction)
 from PyQt6.QtCore import Qt, QRegularExpression, QThread, pyqtSignal
 
+from arduino_engine import ArduinoEngineOverlay # <--- Adicione esta linha
+
+
 # --- IMPORTAÇÃO DA CONFIGURAÇÃO EXTERNA ---
 try:
     from config_inicial import inicializar_ambiente_wandi
@@ -98,6 +101,16 @@ class MeuEditor(QMainWindow):
         self.caminho_arquivo = None
         self.init_ui()
         self.criar_menus()
+
+        # --- LINHA A SER ADICIONADA ---
+        self.engine_overlay = ArduinoEngineOverlay(self)
+        self.engine_overlay.iniciar()
+
+    # Adicione este método na sua classe MeuEditor para reposicionar se você aumentar a janela
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'engine_overlay'):
+            self.engine_overlay.posicionar_no_canto()
 
     def init_ui(self):
         central_container = QWidget()
