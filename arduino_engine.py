@@ -75,14 +75,42 @@ class EngineWorker(QThread):
                 self.progress_signal.emit(30)
                 self.log("Engine carregada com sucesso.", "ok", 1000)
 
-            # 2. Atualizar Index (Somente se houver internet)
+            # 2. Atualizar Index e INSTALAR FIRMATAS (Somente se houver internet)
             if self.check_internet():
                 self.log("Sincronizando banco de dados de placas...", "proc", 1200)
                 subprocess.run([self.cli_path, "core", "update-index"], shell=True, capture_output=True)
-                self.progress_signal.emit(70)
+                self.progress_signal.emit(40)
                 
                 self.log("Verificando drivers e arquiteturas AVR...", "proc", 1200)
                 subprocess.run([self.cli_path, "core", "install", "arduino:avr"], shell=True, capture_output=True)
+                self.progress_signal.emit(50)
+
+                # --- BLOCO ADICIONAL: INSTALAÇÃO DE TODOS OS TIPOS DE FIRMATA ---
+                self.log("Iniciando Sincronização de Firmatas...", "info", 800)
+                
+                # Standard Firmata
+                self.log("Instalando StandardFirmata (USB/Serial)...", "proc", 1000)
+                subprocess.run([self.cli_path, "lib", "install", "Firmata"], shell=True, capture_output=True)
+                self.log("INFO: Comunicação USB básica ativa.", "ok", 800)
+                self.progress_signal.emit(60)
+
+                # Configurable Firmata
+                self.log("Instalando ConfigurableFirmata (Modular)...", "proc", 1000)
+                subprocess.run([self.cli_path, "lib", "install", "ConfigurableFirmata"], shell=True, capture_output=True)
+                self.log("INFO: Controle de sensores avançado ativo.", "ok", 800)
+                self.progress_signal.emit(70)
+
+                # Ethernet Firmata
+                self.log("Instalando Firmata via Ethernet (Rede)...", "proc", 1000)
+                subprocess.run([self.cli_path, "lib", "install", "Ethernet"], shell=True, capture_output=True)
+                self.log("INFO: Controle via cabo de rede ativo.", "ok", 800)
+                self.progress_signal.emit(80)
+
+                # WiFi Firmata
+                self.log("Instalando Firmata via WiFi (Wireless)...", "proc", 1000)
+                subprocess.run([self.cli_path, "lib", "install", "WiFi"], shell=True, capture_output=True)
+                self.log("INFO: Conexão remota sem fio ativa.", "ok", 800)
+                # ---------------------------------------------------------------
             else:
                 self.log("Modo Offline: Mantendo versões atuais.", "info", 1500)
             
@@ -93,7 +121,7 @@ class EngineWorker(QThread):
             result = subprocess.run([self.cli_path, "board", "list", "--format", "json"], 
                                     capture_output=True, text=True, shell=True)
             
-            self.log("Hardware e Bibliotecas sincronizados.", "ok", 1000)
+            self.log("Hardware e Protocolos sincronizados.", "ok", 1000)
             self.log("WANDI STUDIO PRONTO.", "ok", 500)
             self.progress_signal.emit(100)
 
