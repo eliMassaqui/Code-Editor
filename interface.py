@@ -3,7 +3,7 @@ import subprocess
 import os
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit, 
                              QPushButton, QVBoxLayout, QHBoxLayout, QWidget, 
-                             QSplitter, QPlainTextEdit, QStatusBar, QFileDialog)
+                             QSplitter, QPlainTextEdit, QStatusBar, QFileDialog, QLineEdit)
 from PyQt6.QtGui import (QFont, QSyntaxHighlighter, QTextCharFormat, QColor, 
                          QTextCursor, QAction)
 from PyQt6.QtCore import Qt, QRegularExpression, QThread, pyqtSignal
@@ -133,19 +133,41 @@ class MeuEditor(QMainWindow):
         toolbar.addStretch()
         main_layout.addLayout(toolbar)
 
-        # --- Editor e Console ---
+        # --- Editor e Área Inferior ---
         splitter_code = QSplitter(Qt.Orientation.Vertical)
+        
         self.editor = QTextEdit()
         self.editor.setFont(QFont("Consolas", 12))
         self.editor.setAcceptRichText(False)
         self.editor.setStyleSheet(f"background-color: {COLOR_EDITOR}; color: {COLOR_TEXT}; border: none; padding: 10px;")
         self.highlighter = PythonHighlighter(self.editor.document())
 
+        # Container Inferior (Serial Input + Console)
+        container_inferior = QWidget()
+        layout_inferior = QVBoxLayout(container_inferior)
+        layout_inferior.setContentsMargins(0, 0, 0, 0)
+        layout_inferior.setSpacing(2)
+
+        # SERIAL INPUT (Para qualquer caractere do teclado)
+        self.serial_input = QLineEdit()
+        self.serial_input.setPlaceholderText("SERIAL INPUT: Digite aqui caracteres para enviar ao Arduino...")
+        self.serial_input.setStyleSheet(f"""
+            background-color: {COLOR_CONSOLE}; 
+            color: #00ff41; 
+            border: 1px solid {COLOR_ACCENT}; 
+            padding: 5px; 
+            font-family: 'Consolas';
+        """)
+        self.serial_input.returnPressed.connect(self.enviar_comando_serial)
+
         self.console = ConsoleInterativo()
         self.console.input_enviado.connect(self.enviar_input_ao_worker)
 
+        layout_inferior.addWidget(self.serial_input)
+        layout_inferior.addWidget(self.console)
+
         splitter_code.addWidget(self.editor)
-        splitter_code.addWidget(self.console)
+        splitter_code.addWidget(container_inferior)
         splitter_code.setStretchFactor(0, 3)
         splitter_code.setStretchFactor(1, 1)
         main_layout.addWidget(splitter_code)
@@ -165,9 +187,7 @@ class MeuEditor(QMainWindow):
             QMenu::item:selected {{ background-color: {COLOR_ACCENT}; }}
         """)
 
-        # --- Menu File ---
         file_menu = menubar.addMenu("&File")
-        
         file_actions = [
             ("Novo", "Ctrl+N", self.novo_arquivo),
             ("Abrir...", "Ctrl+O", self.abrir_arquivo),
@@ -175,19 +195,15 @@ class MeuEditor(QMainWindow):
             (None, None, None),
             ("Sair", "Alt+F4", self.close)
         ]
-
         for nome, atalho, func in file_actions:
-            if nome is None:
-                file_menu.addSeparator()
+            if nome is None: file_menu.addSeparator()
             else:
                 action = QAction(nome, self)
                 if atalho: action.setShortcut(atalho)
                 action.triggered.connect(func)
                 file_menu.addAction(action)
 
-        # --- Menu Edit ---
         edit_menu = menubar.addMenu("&Edit")
-        
         edit_actions = [
             ("Desfazer", "Ctrl+Z", self.editor.undo),
             ("Refazer", "Ctrl+Y", self.editor.redo),
@@ -198,17 +214,14 @@ class MeuEditor(QMainWindow):
             (None, None, None),
             ("Selecionar Tudo", "Ctrl+A", self.editor.selectAll)
         ]
-
         for nome, atalho, func in edit_actions:
-            if nome is None:
-                edit_menu.addSeparator()
+            if nome is None: edit_menu.addSeparator()
             else:
                 action = QAction(nome, self)
                 if atalho: action.setShortcut(atalho)
                 action.triggered.connect(func)
                 edit_menu.addAction(action)
 
-    # --- Lógica de Arquivos ---
     def novo_arquivo(self):
         self.editor.clear()
         self.caminho_arquivo = None
@@ -227,7 +240,6 @@ class MeuEditor(QMainWindow):
             caminho, _ = QFileDialog.getSaveFileName(self, "Salvar Arquivo", "", "Python (*.py);;Todos os Arquivos (*)")
             if caminho: self.caminho_arquivo = caminho
             else: return
-
         with open(self.caminho_arquivo, 'w', encoding='utf-8') as f:
             f.write(self.editor.toPlainText())
         self.status_bar.showMessage(f"Salvo: {self.caminho_arquivo}")
@@ -265,7 +277,13 @@ class MeuEditor(QMainWindow):
         if hasattr(self, 'worker'):
             self.worker.enviar_input(texto)
 
-# --- INICIALIZAÇÃO ---
+    def enviar_comando_serial(self):
+        comando = self.serial_input.text()
+        if comando:
+            self.enviar_input_ao_worker(comando)
+            self.adicionar_ao_console(f"> {comando}\n")
+            self.serial_input.clear()
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
