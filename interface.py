@@ -97,7 +97,6 @@ class MeuEditor(QMainWindow):
         super().__init__()
         self.caminho_wandi = inicializar_ambiente_wandi()
         self.setWindowTitle("Wandi Studio IDE v1.0 - Robotic System")
-        self.setGeometry(100, 100, 1200, 800)
         self.caminho_arquivo = None
         self.init_ui()
         self.criar_menus()
@@ -294,5 +293,5 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     janela = MeuEditor()
-    janela.show()
+    janela.showMaximized()
     sys.exit(app.exec())
