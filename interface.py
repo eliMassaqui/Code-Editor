@@ -10,6 +10,7 @@ from PyQt6.QtGui import (QFont, QSyntaxHighlighter, QTextCharFormat, QColor,
 from PyQt6.QtCore import Qt, QRegularExpression, QThread, pyqtSignal, QSize, QTimer
 
 from arduino_engine import ArduinoEngineOverlay 
+from firmata_manager import FirmataManager # Importado para o gerenciamento
 
 # --- IMPORTAÇÃO DA CONFIGURAÇÃO EXTERNA ---
 try:
@@ -17,43 +18,20 @@ try:
 except ImportError:
     def inicializar_ambiente_wandi(): return None
 
-# --- CONFIGURAÇÕES ARDUINO (SUPORTE SILENCIOSO) ---
+# --- CONFIGURAÇÕES ARDUINO ---
 BOARD = "arduino:avr:uno"
-def find_arduino_cli():
-    cli_path = shutil.which("arduino-cli")
-    if cli_path: return cli_path
-    home = os.path.expanduser("~")
-    possible = [os.path.join(home, "Documents", "Wandi Studio", "Engine", "arduino", "arduino-cli.exe")]
-    for p in possible:
-        if os.path.exists(p): return p
-    return "arduino-cli"
-
-ARDUINO_CLI = find_arduino_cli()
 
 class PortScannerThread(QThread):
     ports_signal = pyqtSignal(list)
     def run(self):
         try:
+            fm = FirmataManager() # Usa o caminho do CLI definido no manager
             flags = 0x08000000 if os.name == 'nt' else 0
-            output = subprocess.run([ARDUINO_CLI, "board", "list"], capture_output=True, text=True, creationflags=flags)
+            output = subprocess.run([fm.cli_path, "board", "list"], capture_output=True, text=True, creationflags=flags)
             lines = output.stdout.splitlines()
             ports = [line.split()[0] for line in lines if "COM" in line or "/dev/tty" in line]
             self.ports_signal.emit(ports)
         except: self.ports_signal.emit([])
-
-class HardwareActionThread(QThread):
-    log_signal = pyqtSignal(str)
-    finished_signal = pyqtSignal(str)
-    def __init__(self, comando):
-        super().__init__(); self.comando = comando
-    def run(self):
-        try:
-            p = subprocess.Popen(self.comando, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, 
-                                 creationflags=0x08000000 if os.name == 'nt' else 0)
-            for line in p.stdout: self.log_signal.emit(line.strip())
-            p.wait()
-            self.finished_signal.emit("✅ Operação concluída" if p.returncode == 0 else "❌ Falha na operação")
-        except Exception as e: self.finished_signal.emit(f"❌ Erro: {str(e)}")
 
 # --- CORES ---
 COLOR_BG = "#0b1622"
@@ -61,6 +39,7 @@ COLOR_EDITOR = "#152233"
 COLOR_CONSOLE = "#050a0f"
 COLOR_ACCENT = "#3498db"
 COLOR_TEXT = "#d1dce8"
+COLOR_DEEP_BLUE = "#0d1b2a"
 
 # --- WORKER DE EXECUÇÃO ---
 class ExecutorWorker(QThread):
@@ -136,13 +115,17 @@ class MeuEditor(QMainWindow):
         self.caminho_wandi = inicializar_ambiente_wandi()
         self.setWindowTitle("Wandi Studio IDE v1.0 - Robotic System")
         self.caminho_arquivo = None
+        
+        # INICIALIZA O GERENCIADOR
+        self.firmata = FirmataManager(BOARD)
+        self.firmata.log_received.connect(self.adicionar_ao_output)
+
         self.init_ui()
         self.criar_menus()
 
         self.engine_overlay = ArduinoEngineOverlay(self)
         self.engine_overlay.iniciar()
 
-        # Scanner de Portas
         self.scanner_thread = PortScannerThread()
         self.scanner_thread.ports_signal.connect(self.atualizar_lista_portas)
         self.timer_portas = QTimer()
@@ -162,12 +145,7 @@ class MeuEditor(QMainWindow):
     def executar_compilacao_firmata(self):
         self.tabs_inferiores.setCurrentIndex(0)
         self.adicionar_ao_output("\n[SISTEMA] Iniciando Compilação do StandardFirmata...\n")
-        caminho_sketch = os.path.expanduser("~/Documents/Arduino/libraries/Firmata/examples/StandardFirmata")
-        cmd = [ARDUINO_CLI, "compile", "--fqbn", BOARD, caminho_sketch]
-        self.h_thread = HardwareActionThread(cmd)
-        self.h_thread.log_signal.connect(lambda t: self.adicionar_ao_output(t + "\n"))
-        self.h_thread.finished_signal.connect(lambda m: self.adicionar_ao_output(m + "\n"))
-        self.h_thread.start()
+        self.firmata.compile_firmata("StandardFirmata")
 
     def executar_upload_firmata(self):
         porta = self.port_dropdown.currentText()
@@ -176,13 +154,7 @@ class MeuEditor(QMainWindow):
             return
         self.parar_execucao()
         self.tabs_inferiores.setCurrentIndex(0)
-        self.adicionar_ao_output(f"\n[SISTEMA] Realizando Upload na porta {porta}...\n")
-        caminho_sketch = os.path.expanduser("~/Documents/Arduino/libraries/Firmata/examples/StandardFirmata")
-        cmd = [ARDUINO_CLI, "upload", "-p", porta, "--fqbn", BOARD, caminho_sketch]
-        self.u_thread = HardwareActionThread(cmd)
-        self.u_thread.log_signal.connect(lambda t: self.adicionar_ao_output(t + "\n"))
-        self.u_thread.finished_signal.connect(lambda m: self.adicionar_ao_output(m + "\n"))
-        self.u_thread.start()
+        self.firmata.upload_firmata(porta, "StandardFirmata")
 
     def limpar_output_sistema(self):
         self.console_output.clear()
@@ -227,7 +199,25 @@ class MeuEditor(QMainWindow):
         toolbar_layout.addWidget(QLabel(" Porta: "))
         self.port_dropdown = QComboBox()
         self.port_dropdown.setMinimumWidth(120)
-        self.port_dropdown.setStyleSheet("background-color: #1c2b3a; color: #00ffdd; border-radius: 4px; padding: 2px;")
+        self.port_dropdown.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {COLOR_DEEP_BLUE};
+                color: #00ffdd;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 4px;
+                padding: 2px 10px;
+            }}
+            QComboBox:focus, QComboBox:on {{
+                border: 1px solid white;
+            }}
+            QComboBox::drop-down {{ border: none; }}
+            QComboBox QAbstractItemView {{
+                background-color: {COLOR_DEEP_BLUE};
+                color: #00ffdd;
+                selection-background-color: {COLOR_ACCENT};
+                border: 1px solid white;
+            }}
+        """)
         toolbar_layout.addWidget(self.port_dropdown)
 
         toolbar_layout.addStretch()
@@ -266,7 +256,7 @@ class MeuEditor(QMainWindow):
         layout_output_interno.addLayout(barra_limpeza); layout_output_interno.addWidget(self.console_output)
         self.tabs_inferiores.addTab(container_output, "OUTPUT")
 
-        # Aba Serial Monitor (RESTAURADO PLACEHOLDER ORIGINAL)
+        # Aba Serial Monitor
         container_serial = QWidget(); layout_serial = QVBoxLayout(container_serial)
         layout_serial.setContentsMargins(0, 0, 0, 0); layout_serial.setSpacing(2)
         self.serial_input = QLineEdit()
@@ -274,7 +264,6 @@ class MeuEditor(QMainWindow):
         self.serial_input.setStyleSheet(f"background-color: {COLOR_CONSOLE}; color: #00ff41; border: 1px solid {COLOR_ACCENT}; padding: 5px; font-family: 'Consolas';")
         self.serial_input.returnPressed.connect(self.enviar_comando_serial)
         
-        # Barra Limpeza Serial
         barra_limpeza_serial = QHBoxLayout(); barra_limpeza_serial.addStretch()
         btn_limpar_serial = QPushButton("Limpar Serial")
         btn_limpar_serial.setStyleSheet("QPushButton { background: transparent; color: #5c6370; border: none; padding: 2px 10px; font-size: 10px; }")
@@ -295,7 +284,6 @@ class MeuEditor(QMainWindow):
         self.status_bar.setStyleSheet(f"color: #5c6370; background-color: {COLOR_BG};")
         self.status_bar.showMessage("Pronto")
 
-    # --- RESTAURAÇÃO DOS MÉTODOS ORIGINAIS (FILE/EDIT) ---
     def criar_menus(self):
         menubar = self.menuBar()
         menubar.setStyleSheet(f"QMenuBar {{ background-color: {COLOR_BG}; color: {COLOR_TEXT}; border-bottom: 1px solid #1c2b3d; }}")
