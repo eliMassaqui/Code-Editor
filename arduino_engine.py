@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QVBoxLayout, QWidget, QTextEdit,
 from PyQt6.QtCore import QThread, pyqtSignal, Qt, QTimer
 from PyQt6.QtGui import QTextCursor
 
-# --- CONSTANTES DE ESTILO DO SEU CÓDIGO ORIGINAL ---
+# --- CONSTANTES DE ESTILO (Preservando seu padrão) ---
 COLOR_BG = "#0b1622"
 COLOR_EDITOR = "#152233"
 COLOR_CONSOLE = "#050a0f"
@@ -28,29 +28,30 @@ class EngineWorker(QThread):
         except OSError:
             return False
 
-    def log(self, text, status="info", delay=800):
+    def log(self, text, status="info", delay=600):
         """ Envia o log e aguarda um tempo para leitura """
         t = datetime.datetime.now().strftime("%H:%M:%S")
         self.log_signal.emit(f"[{t}] {text}", status)
-        self.msleep(delay) # Pausa a thread para o usuário ler
+        self.msleep(delay)
 
     def run(self):
         temp_zip = os.path.join(self.work_dir, "arduino_cli_temp.zip")
+        # Flag para silenciar janelas de console no Windows
+        flags = 0x08000000 if os.name == 'nt' else 0
+
         try:
-            self.log("Iniciando Verificação de Engine...", "proc", 1200)
+            self.log("Iniciando Verificação de Engine...", "proc", 1000)
             
-            # VERIFICAÇÃO DE INTERNET
             if not self.check_internet():
                 self.log("AVISO: Sem conexão com a internet.", "err", 1500)
                 self.log("Algumas atualizações serão ignoradas.", "info", 1000)
             else:
-                self.log("Conexão com a rede: OK", "ok", 1000)
+                self.log("Conexão com a rede: OK", "ok", 800)
 
-            # 1. Download do CLI se não existir
+            # 1. DOWNLOAD DO CORE CLI (Se necessário)
             if not os.path.exists(self.cli_path):
                 if not self.check_internet():
                     self.log("ERRO CRÍTICO: Engine não encontrada.", "err", 1500)
-                    self.log("Conecte-se à rede para baixar o core.", "err", 2000)
                     return 
 
                 self.log("Engine Ausente. Baixando Core...", "proc", 1000)
@@ -65,63 +66,67 @@ class EngineWorker(QThread):
                         dl += len(chunk)
                         if total > 0: self.progress_signal.emit(int((dl/total)*100))
                 
-                self.log("Download concluído. Extraindo...", "proc", 1500)
+                self.log("Download concluído. Extraindo...", "proc", 1200)
                 with zipfile.ZipFile(temp_zip, 'r') as z:
                     z.extractall(self.work_dir)
                 os.remove(temp_zip)
-                self.log("Instalação do binário finalizada.", "ok", 1200)
+                self.log("Instalação do binário finalizada.", "ok", 1000)
             else:
-                self.log("Localizando arquivos da Engine...", "proc", 800)
-                self.progress_signal.emit(30)
-                self.log("Engine carregada com sucesso.", "ok", 1000)
+                self.log("Localizando arquivos da Engine...", "proc", 600)
+                self.progress_signal.emit(20)
+                self.log("Engine carregada com sucesso.", "ok", 800)
 
-            # 2. Atualizar Index e INSTALAR FIRMATAS (Somente se houver internet)
+            # 2. INSTALAÇÃO DE PLACAS E DEPENDÊNCIAS (Somente Online)
             if self.check_internet():
-                self.log("Sincronizando banco de dados de placas...", "proc", 1200)
-                subprocess.run([self.cli_path, "core", "update-index"], shell=True, capture_output=True)
+                self.log("Sincronizando banco de dados...", "proc", 1000)
+                subprocess.run([self.cli_path, "core", "update-index"], shell=True, capture_output=True, creationflags=flags)
+                self.progress_signal.emit(30)
+                
+                self.log("Verificando arquiteturas AVR (Arduino)...", "proc", 1000)
+                subprocess.run([self.cli_path, "core", "install", "arduino:avr"], shell=True, capture_output=True, creationflags=flags)
                 self.progress_signal.emit(40)
-                
-                self.log("Verificando drivers e arquiteturas AVR...", "proc", 1200)
-                subprocess.run([self.cli_path, "core", "install", "arduino:avr"], shell=True, capture_output=True)
-                self.progress_signal.emit(50)
 
-                # --- BLOCO ADICIONAL: INSTALAÇÃO DE TODOS OS TIPOS DE FIRMATA ---
-                self.log("Iniciando Sincronização de Firmatas...", "info", 800)
+                # --- BLOCO DE BLINDAGEM: REQUISITOS TÉCNICOS ---
+                self.log("Sincronizando Hardware Helper Libs...", "info", 600)
+                # Estas libs evitam erros de "No such file" em Standard e Plus
+                deps = ["Servo", "Wire", "Stepper", "LiquidCrystal", 
+                        "Adafruit Unified Sensor", "DHT sensor library", "NewPing"]
                 
-                # Standard Firmata
-                self.log("Instalando StandardFirmata (USB/Serial)...", "proc", 1000)
-                subprocess.run([self.cli_path, "lib", "install", "Firmata"], shell=True, capture_output=True)
-                self.log("INFO: Comunicação USB básica ativa.", "ok", 800)
+                for dep in deps:
+                    self.log(f"Instalando componente: {dep}...", "proc", 300)
+                    subprocess.run([self.cli_path, "lib", "install", dep], 
+                                   shell=True, capture_output=True, creationflags=flags)
                 self.progress_signal.emit(60)
 
-                # Configurable Firmata
-                self.log("Instalando ConfigurableFirmata (Modular)...", "proc", 1000)
-                subprocess.run([self.cli_path, "lib", "install", "ConfigurableFirmata"], shell=True, capture_output=True)
-                self.log("INFO: Controle de sensores avançado ativo.", "ok", 800)
-                self.progress_signal.emit(70)
+                # --- INSTALAÇÃO DAS FIRMATAS DO CARD ---
+                self.log("Sincronizando Firmatas Principais...", "info", 800)
+                
+                firmatas = [
+                    ("Firmata", "Standard", 70),
+                    ("FirmataPlus", "Plus", 80),
+                    ("ConfigurableFirmata", "Configurable", 90)
+                ]
 
-                # Ethernet Firmata
-                self.log("Instalando Firmata via Ethernet (Rede)...", "proc", 1000)
-                subprocess.run([self.cli_path, "lib", "install", "Ethernet"], shell=True, capture_output=True)
-                self.log("INFO: Controle via cabo de rede ativo.", "ok", 800)
-                self.progress_signal.emit(80)
+                for lib, nome, prog in firmatas:
+                    self.log(f"Preparando {lib} ({nome})...", "proc", 600)
+                    subprocess.run([self.cli_path, "lib", "install", lib], 
+                                   shell=True, capture_output=True, creationflags=flags)
+                    self.progress_signal.emit(prog)
 
-                # WiFi Firmata
-                self.log("Instalando Firmata via WiFi (Wireless)...", "proc", 1000)
-                subprocess.run([self.cli_path, "lib", "install", "WiFi"], shell=True, capture_output=True)
-                self.log("INFO: Conexão remota sem fio ativa.", "ok", 800)
-                # ---------------------------------------------------------------
+                # Bibliotecas para WiFi Firmata
+                self.log("Preparando protocolos WiFi/Ethernet...", "proc", 600)
+                subprocess.run([self.cli_path, "lib", "install", "WiFi"], shell=True, capture_output=True, creationflags=flags)
+                subprocess.run([self.cli_path, "lib", "install", "Ethernet"], shell=True, capture_output=True, creationflags=flags)
+                self.progress_signal.emit(95)
             else:
-                self.log("Modo Offline: Mantendo versões atuais.", "info", 1500)
+                self.log("Modo Offline: Usando dependências locais.", "info", 1500)
             
-            self.progress_signal.emit(90)
+            # 3. FINALIZAÇÃO
+            self.log("Escaneando portas USB por hardware...", "proc", 800)
+            subprocess.run([self.cli_path, "board", "list", "--format", "json"], 
+                           capture_output=True, text=True, shell=True, creationflags=flags)
             
-            # 3. Listar Hardware
-            self.log("Escaneando portas USB por hardware...", "proc", 1000)
-            result = subprocess.run([self.cli_path, "board", "list", "--format", "json"], 
-                                    capture_output=True, text=True, shell=True)
-            
-            self.log("Hardware e Protocolos sincronizados.", "ok", 1000)
+            self.log("ENGINE E HARDWARE SINCRONIZADOS.", "ok", 800)
             self.log("WANDI STUDIO PRONTO.", "ok", 500)
             self.progress_signal.emit(100)
 
@@ -133,7 +138,7 @@ class EngineWorker(QThread):
 class ArduinoEngineOverlay(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(480, 160) # Aumentado levemente para melhor leitura
+        self.setFixedSize(480, 160)
         
         self.setStyleSheet(f"""
             QWidget#MainContainer {{
@@ -142,29 +147,18 @@ class ArduinoEngineOverlay(QWidget):
                 border-radius: 6px;
             }}
             QLabel {{ 
-                color: {COLOR_ACCENT}; 
-                font-family: 'Consolas'; 
-                font-size: 13px; 
-                font-weight: bold;
-                background: transparent; 
-                border: none;
+                color: {COLOR_ACCENT}; font-family: 'Consolas'; font-size: 13px; 
+                font-weight: bold; background: transparent; border: none;
             }}
             QProgressBar {{
-                border: 1px solid {COLOR_BG};
-                border-radius: 2px;
-                text-align: center;
-                background-color: {COLOR_CONSOLE};
-                color: {COLOR_TEXT};
-                height: 12px;
-                font-size: 10px;
+                border: 1px solid {COLOR_BG}; border-radius: 2px; text-align: center;
+                background-color: {COLOR_CONSOLE}; color: {COLOR_TEXT};
+                height: 12px; font-size: 10px;
             }}
             QProgressBar::chunk {{ background-color: {COLOR_ACCENT}; }}
             QTextEdit {{ 
-                background: transparent; 
-                border: none; 
-                color: {COLOR_TEXT}; 
-                font-family: 'Consolas'; 
-                font-size: 11px; 
+                background: transparent; border: none; color: {COLOR_TEXT}; 
+                font-family: 'Consolas'; font-size: 11px; 
             }}
         """)
         

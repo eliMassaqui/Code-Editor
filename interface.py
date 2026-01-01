@@ -12,6 +12,8 @@ from PyQt6.QtCore import Qt, QRegularExpression, QThread, pyqtSignal, QSize, QTi
 from arduino_engine import ArduinoEngineOverlay 
 from firmata_manager import FirmataManager # Importado para o gerenciamento
 
+from firmata_ui import FirmataCardOverlay
+
 # --- IMPORTAÇÃO DA CONFIGURAÇÃO EXTERNA ---
 try:
     from config_inicial import inicializar_ambiente_wandi
@@ -121,6 +123,14 @@ class MeuEditor(QMainWindow):
         self.firmata.log_received.connect(self.adicionar_ao_output)
 
         self.init_ui()
+        # Após self.init_ui()
+        self.ultimo_tipo_compilado = "Standard" # Valor padrão
+        self.card_instalar = FirmataCardOverlay(self, cores={
+            "bg": COLOR_DEEP_BLUE,
+            "accent": COLOR_ACCENT,
+            "text": "#00ffdd"
+        })
+        self.card_instalar.firmata_selected.connect(self.processar_compilacao_firmata)
         self.criar_menus()
 
         self.engine_overlay = ArduinoEngineOverlay(self)
@@ -143,18 +153,27 @@ class MeuEditor(QMainWindow):
                 self.port_dropdown.setCurrentText(current)
 
     def executar_compilacao_firmata(self):
+        """Abre o card flutuante para escolha do tipo."""
+        self.card_instalar.mostrar()
+
+    def processar_compilacao_firmata(self, tipo_escolhido):
+        """Chamado após o card (teclado ou clique)."""
+        self.ultimo_tipo_compilado = tipo_escolhido # Salva para o upload posterior
         self.tabs_inferiores.setCurrentIndex(0)
-        self.adicionar_ao_output("\n[SISTEMA] Iniciando Compilação do StandardFirmata...\n")
-        self.firmata.compile_firmata("StandardFirmata")
+        self.firmata.compile_firmata(tipo_escolhido)
 
     def executar_upload_firmata(self):
+        """Faz o upload do que foi selecionado na última compilação."""
         porta = self.port_dropdown.currentText()
         if not porta:
             self.adicionar_ao_output("\n❌ Erro: Selecione uma porta USB!\n")
             return
+        
         self.parar_execucao()
         self.tabs_inferiores.setCurrentIndex(0)
-        self.firmata.upload_firmata(porta, "StandardFirmata")
+        # Usa o tipo que foi escolhido no card de compilação
+        self.firmata.upload_firmata(porta, self.ultimo_tipo_compilado)
+
 
     def limpar_output_sistema(self):
         self.console_output.clear()
@@ -168,6 +187,9 @@ class MeuEditor(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, 'engine_overlay'):
             self.engine_overlay.posicionar_no_canto()
+        # ... seu código de overlay ...
+        if hasattr(self, 'card_instalar') and self.card_instalar.isVisible():
+            self.card_instalar.setGeometry(self.rect())
 
     def init_ui(self):
         central_container = QWidget()
