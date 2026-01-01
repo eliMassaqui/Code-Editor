@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLabel, QProgressBar
 )
 from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QColor
 
 # ================= CONFIGURAÇÕES =================
 BOARD = "arduino:avr:uno"
@@ -37,26 +37,30 @@ ARDUINO_CLI = find_arduino_cli()
 # Caminho do Arduino
 if platform.system() == "Windows":
     ARDUINO_PATH = os.path.expanduser("~/Documents/Arduino")
-    PORT_COMMAND = [ARDUINO_CLI, "board", "list"]
 else:
     ARDUINO_PATH = os.path.expanduser("~/Arduino")
-    PORT_COMMAND = [ARDUINO_CLI, "board", "list"]
 
 EXAMPLES_PATH = os.path.join(ARDUINO_PATH, "libraries", "Firmata", "examples", FIRMATA_SKETCH)
+PORT_COMMAND = [ARDUINO_CLI, "board", "list"]
 
 # ================= THREADS =================
 class CompileThread(QThread):
     log_signal = pyqtSignal(str)
+    progress_signal = pyqtSignal(int)
     finished_signal = pyqtSignal(str)
 
     def run(self):
         try:
+            self.progress_signal.emit(0)
             self.check_arduino_cli()
+            self.progress_signal.emit(1)
             self.install_core_and_servo()
+            self.progress_signal.emit(2)
             self.compile_firmata()
-            self.finished_signal.emit("✅ Compilação concluída!")
+            self.progress_signal.emit(3)
+            self.finished_signal.emit("Compilação concluída com sucesso.")
         except Exception as e:
-            self.finished_signal.emit(f"❌ Erro: {e}")
+            self.finished_signal.emit(f"Erro: {e}")
 
     def run_cmd(self, cmd):
         self.log_signal.emit(f">> {' '.join(cmd)}")
@@ -69,30 +73,36 @@ class CompileThread(QThread):
 
     def check_arduino_cli(self):
         if not os.path.exists(ARDUINO_CLI):
-            raise RuntimeError(f"arduino-cli.exe não encontrado em {ARDUINO_CLI}")
+            raise RuntimeError(f"arduino-cli não encontrado em {ARDUINO_CLI}")
         self.run_cmd([ARDUINO_CLI, "version"])
+        self.log_signal.emit("arduino-cli verificado com sucesso.")
 
     def install_core_and_servo(self):
         self.run_cmd([ARDUINO_CLI, "core", "install", "arduino:avr"])
         self.run_cmd([ARDUINO_CLI, "lib", "install", "Servo"])
+        self.log_signal.emit("Core e biblioteca Servo instalados com sucesso.")
 
     def compile_firmata(self):
         if not os.path.exists(EXAMPLES_PATH):
             raise RuntimeError(f"StandardFirmata não encontrado em {EXAMPLES_PATH}")
         self.run_cmd([ARDUINO_CLI, "compile", "--fqbn", BOARD, EXAMPLES_PATH])
-
+        self.log_signal.emit("Firmata compilado com sucesso.")
 
 class UploadThread(QThread):
     log_signal = pyqtSignal(str)
+    progress_signal = pyqtSignal(int)
     finished_signal = pyqtSignal(str)
 
     def run(self):
         try:
+            self.progress_signal.emit(0)
             port = self.detect_port()
+            self.progress_signal.emit(1)
             self.upload_firmata(port)
-            self.finished_signal.emit("✅ Upload concluído!")
+            self.progress_signal.emit(2)
+            self.finished_signal.emit("Upload concluído com sucesso.")
         except Exception as e:
-            self.finished_signal.emit(f"❌ Erro: {e}")
+            self.finished_signal.emit(f"Erro: {e}")
 
     def run_cmd(self, cmd):
         self.log_signal.emit(f">> {' '.join(cmd)}")
@@ -107,18 +117,23 @@ class UploadThread(QThread):
         output = subprocess.run(PORT_COMMAND, capture_output=True, text=True)
         lines = output.stdout.splitlines()
         for line in lines:
-            if "arduino" in line.lower():
+            if platform.system() == "Windows" and "COM" in line:
                 port = line.split()[0]
-                self.log_signal.emit(f"✅ Arduino detectado na porta {port}")
+                self.log_signal.emit(f"Arduino detectado na porta {port}")
+                return port
+            elif platform.system() != "Windows" and "/dev/tty" in line:
+                port = line.split()[0]
+                self.log_signal.emit(f"Arduino detectado na porta {port}")
                 return port
         raise RuntimeError("Não foi possível detectar o Arduino.")
 
     def upload_firmata(self, port):
-        # Upload direto do sketch, sem precisar do caminho HEX fixo
         self.run_cmd([ARDUINO_CLI, "upload", "-p", port, "--fqbn", BOARD, EXAMPLES_PATH])
+        self.log_signal.emit("Firmata enviado para o Arduino com sucesso.")
 
+# ... mantemos as mesmas importações, threads e funções ...
 
-# ================= INTERFACE DEEP BLUE =================
+# ================= INTERFACE =================
 class FirmataGUI(QWidget):
     def __init__(self):
         super().__init__()
@@ -134,19 +149,21 @@ class FirmataGUI(QWidget):
         self.label.setStyleSheet("color: #FFFFFF; font-weight: bold; font-size: 14pt;")
         layout.addWidget(self.label)
 
-        self.compile_button = QPushButton("💻 Compilar Firmata")
+        self.compile_button = QPushButton("Compilar Firmata")
         self.compile_button.clicked.connect(self.start_compile)
         layout.addWidget(self.compile_button)
 
-        self.upload_button = QPushButton("📤 Carregar na Placa")
+        self.upload_button = QPushButton("Carregar na Placa")
         self.upload_button.clicked.connect(self.start_upload)
         layout.addWidget(self.upload_button)
 
         self.progress = QProgressBar()
+        # Barra indeterminada (se move sozinha)
         self.progress.setRange(0, 0)
         self.progress.setVisible(False)
         self.progress.setStyleSheet(
-            "QProgressBar {background-color: #1C2B3A; border: 1px solid #0A1A28; height: 20px;}"
+            "QProgressBar {background-color: #1C2B3A; border: 1px solid #0A1A28; height: 20px;} "
+            "QProgressBar::chunk {background-color: #00FFDD;}"
         )
         layout.addWidget(self.progress)
 
@@ -160,59 +177,47 @@ class FirmataGUI(QWidget):
 
     def deep_blue_style(self):
         return """
-        QWidget {
-            background-color: #0B1622;
-        }
-        QPushButton {
-            background-color: #1C2B3A;
-            color: #00FFDD;
-            border: 1px solid #0A1A28;
-            padding: 8px;
-            font-weight: bold;
-        }
-        QPushButton:hover {
-            background-color: #2A3B50;
-        }
-        QLabel {
-            color: #00FFDD;
-        }
-        QProgressBar::chunk {
-            background-color: #00FFDD;
-        }
+        QWidget { background-color: #0B1622; }
+        QPushButton { background-color: #1C2B3A; color: #00FFDD; border: 1px solid #0A1A28; padding: 8px; font-weight: bold; }
+        QPushButton:hover { background-color: #2A3B50; }
+        QLabel { color: #00FFDD; }
         """
+
+    def append_log(self, text, color="#00FFDD"):
+        self.log.setTextColor(QColor(color))
+        self.log.append(text)
+        self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
 
     def start_compile(self):
         self.compile_button.setEnabled(False)
         self.upload_button.setEnabled(False)
-        self.progress.setVisible(True)
+        self.progress.setVisible(True)  # barra indeterminada
         self.log.clear()
 
         self.compile_thread = CompileThread()
-        self.compile_thread.log_signal.connect(self.append_log)
+        self.compile_thread.log_signal.connect(lambda text: self.append_log(text))
         self.compile_thread.finished_signal.connect(self.compile_finished)
         self.compile_thread.start()
 
     def start_upload(self):
         self.upload_button.setEnabled(False)
-        self.progress.setVisible(True)
+        self.progress.setVisible(True)  # barra indeterminada
 
         self.upload_thread = UploadThread()
-        self.upload_thread.log_signal.connect(self.append_log)
+        self.upload_thread.log_signal.connect(lambda text: self.append_log(text))
         self.upload_thread.finished_signal.connect(self.upload_finished)
         self.upload_thread.start()
 
-    def append_log(self, text):
-        self.log.append(text)
-        self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
-
     def compile_finished(self, message):
-        self.append_log(message)
+        color = "#00FF00" if "sucesso" in message.lower() else "#FF5555"
+        self.append_log(message, color)
         self.progress.setVisible(False)
         self.compile_button.setEnabled(True)
         self.upload_button.setEnabled(True)
 
     def upload_finished(self, message):
-        self.append_log(message)
+        color = "#00FF00" if "sucesso" in message.lower() else "#FF5555"
+        self.append_log(message, color)
         self.progress.setVisible(False)
         self.upload_button.setEnabled(True)
 
