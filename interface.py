@@ -86,11 +86,21 @@ class ExecutorWorker(QThread):
                 self.line_received.emit(f"\nErro de Input: {str(e)}\n")
 
 # --- JANELA PRINCIPAL ---
+# --- JANELA PRINCIPAL ---
 class MeuEditor(QMainWindow):
     def __init__(self):
         super().__init__()
         self.caminho_wandi = inicializar_ambiente_wandi()
+        
+        # Define o título da janela
         self.setWindowTitle("Wandi Studio IDE v1.0 - Robotic System")
+        
+        # --- DEFINIÇÃO DO ÍCONE DA JANELA ---
+        # Certifique-se que o arquivo 'wandi.png' está na mesma pasta do script
+        caminho_icone = os.path.join(os.path.dirname(__file__), "wandi.png")
+        self.setWindowIcon(QIcon(caminho_icone))
+        # ------------------------------------
+
         self.caminho_arquivo = None
         
         # INICIALIZA O GERENCIADOR
@@ -98,8 +108,9 @@ class MeuEditor(QMainWindow):
         self.firmata.log_received.connect(self.adicionar_ao_output)
 
         self.init_ui()
-        # Após self.init_ui()
-        self.ultimo_tipo_compilado = "Standard" # Valor padrão
+        
+        # Restante da sua lógica original...
+        self.ultimo_tipo_compilado = "Standard" 
         self.card_instalar = FirmataCardOverlay(self, cores={
             "bg": COLOR_DEEP_BLUE,
             "accent": COLOR_ACCENT,
