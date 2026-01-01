@@ -14,6 +14,7 @@ from firmata_manager import FirmataManager # Importado para o gerenciamento
 
 # --- "Cérebro visual" do editor ---
 from highlighter import PythonHighlighter
+from highlighter import CodeEditor
 
 
 from firmata_ui import FirmataCardOverlay
@@ -220,11 +221,42 @@ class MeuEditor(QMainWindow):
         main_layout.addWidget(self.container_toolbar)
 
         splitter_code = QSplitter(Qt.Orientation.Vertical)
-        self.editor = QTextEdit()
+
+        self.editor = CodeEditor()
         self.editor.setFont(QFont("Consolas", 12))
-        self.editor.setAcceptRichText(False)
-        self.editor.setStyleSheet(f"background-color: {COLOR_EDITOR}; color: {COLOR_TEXT}; border: none; padding: 10px;")
-        self.highlighter = PythonHighlighter(self.editor.document())
+        
+        # Estilo atualizado com a BARRA DE ROLAGEM (Scrollbar) interativa
+        self.editor.setStyleSheet(f"""
+            QPlainTextEdit {{
+                background-color: {COLOR_EDITOR}; 
+                color: {COLOR_TEXT}; 
+                border: none; 
+                padding: 10px;
+            }}
+            /* Configuração da Barra Vertical */
+            QScrollBar:vertical {{
+                border: none;
+                background: {COLOR_BG};
+                width: 14px;
+                margin: 0px;
+            }}
+            /* O corpo da barra que o usuário arrasta */
+            QScrollBar::handle:vertical {{
+                background: {COLOR_ACCENT};
+                min-height: 30px;
+                border-radius: 7px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: #4da3ff; /* Cor mais clara ao passar o mouse */
+            }}
+        """)
+
+        # Como o CodeEditor que criamos no highlighter.py já inicializa o 
+        # PythonHighlighter internamente, você pode remover ou comentar esta linha:
+        # self.highlighter = PythonHighlighter(self.editor.document())
+
+        self.tabs_inferiores = QTabWidget()
+        # ... continua o código do tabs_inferiores ...
 
         self.tabs_inferiores = QTabWidget()
         self.tabs_inferiores.setStyleSheet(f"""
