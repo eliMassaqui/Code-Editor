@@ -347,11 +347,53 @@ class MeuEditor(QMainWindow):
                 act.triggered.connect(func); edit_menu.addAction(act)
 
     def novo_arquivo(self): self.editor.clear(); self.caminho_arquivo = None; self.status_bar.showMessage("Novo arquivo")
+    
+    def obter_caminho_padrao_wandi(self):
+        """
+        Gera o caminho padrão: Documentos/Wandi Studio/Wandi Code.
+        Cria as pastas caso elas não existam no PC atual.
+        """
+        # os.path.expanduser("~") aponta para C:\Users\NOME_DO_USER
+        documentos = os.path.join(os.path.expanduser("~"), "Documents")
+        caminho_wandi = os.path.join(documentos, "Wandi Studio", "Wandi Code")
+        
+        # Cria as pastas se não existirem para evitar erro de 'caminho não encontrado'
+        if not os.path.exists(caminho_wandi):
+            os.makedirs(caminho_wandi)
+            
+        return caminho_wandi
+
     def abrir_arquivo(self):
-        caminho, _ = QFileDialog.getOpenFileName(self, "Abrir Arquivo", "", "Python (*.py);;Todos os Arquivos (*)")
+        caminho_inicial = self.obter_caminho_padrao_wandi()
+        caminho, _ = QFileDialog.getOpenFileName(
+            self, 
+            "Abrir Arquivo", 
+            caminho_inicial, 
+            "Python (*.py);;Todos os Arquivos (*)"
+        )
         if caminho:
-            with open(caminho, 'r', encoding='utf-8') as f: self.editor.setPlainText(f.read())
-            self.caminho_arquivo = caminho; self.status_bar.showMessage(f"Aberto: {caminho}")
+            with open(caminho, 'r', encoding='utf-8') as f: 
+                self.editor.setPlainText(f.read())
+            self.caminho_arquivo = caminho
+            self.status_bar.showMessage(f"Aberto: {caminho}")
+
+    def salvar_arquivo(self):
+        if not self.caminho_arquivo:
+            caminho_inicial = self.obter_caminho_padrao_wandi()
+            caminho, _ = QFileDialog.getSaveFileName(
+                self, 
+                "Salvar Arquivo", 
+                caminho_inicial, 
+                "Python (*.py);;Todos os Arquivos (*)"
+            )
+            if caminho: 
+                self.caminho_arquivo = caminho
+            else: 
+                return
+        
+        with open(self.caminho_arquivo, 'w', encoding='utf-8') as f: 
+            f.write(self.editor.toPlainText())
+        self.status_bar.showMessage(f"Salvo: {self.caminho_arquivo}")
 
     def salvar_arquivo(self):
         if not self.caminho_arquivo:
