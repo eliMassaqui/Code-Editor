@@ -1,0 +1,1 @@
+Próximo passo: Como a lógica do Firmata está centralizada, você gostaria que eu ajudasse a configurar o caminho automático para o arduino-cli dentro da sua pasta Engine para que ele funcione em qualquer computador sem precisar instalar nada?

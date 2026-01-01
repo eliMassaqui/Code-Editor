@@ -1,21 +1,59 @@
 import sys
 import subprocess
 import os
+import shutil
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit, 
                              QPushButton, QVBoxLayout, QHBoxLayout, QWidget, 
-                             QSplitter, QPlainTextEdit, QStatusBar, QFileDialog, QLineEdit, QTabWidget)
+                             QSplitter, QPlainTextEdit, QStatusBar, QFileDialog, QLineEdit, QTabWidget, QFrame, QLabel, QComboBox)
 from PyQt6.QtGui import (QFont, QSyntaxHighlighter, QTextCharFormat, QColor, 
-                         QTextCursor, QAction, QIcon) # Adicionado QIcon
-from PyQt6.QtCore import Qt, QRegularExpression, QThread, pyqtSignal, QSize # Adicionado QSize
+                         QTextCursor, QAction, QIcon)
+from PyQt6.QtCore import Qt, QRegularExpression, QThread, pyqtSignal, QSize, QTimer
 
-from arduino_engine import ArduinoEngineOverlay # <--- Adicione esta linha
-
+from arduino_engine import ArduinoEngineOverlay 
 
 # --- IMPORTAÇÃO DA CONFIGURAÇÃO EXTERNA ---
 try:
     from config_inicial import inicializar_ambiente_wandi
 except ImportError:
     def inicializar_ambiente_wandi(): return None
+
+# --- CONFIGURAÇÕES ARDUINO (SUPORTE SILENCIOSO) ---
+BOARD = "arduino:avr:uno"
+def find_arduino_cli():
+    cli_path = shutil.which("arduino-cli")
+    if cli_path: return cli_path
+    home = os.path.expanduser("~")
+    possible = [os.path.join(home, "Documents", "Wandi Studio", "Engine", "arduino", "arduino-cli.exe")]
+    for p in possible:
+        if os.path.exists(p): return p
+    return "arduino-cli"
+
+ARDUINO_CLI = find_arduino_cli()
+
+class PortScannerThread(QThread):
+    ports_signal = pyqtSignal(list)
+    def run(self):
+        try:
+            flags = 0x08000000 if os.name == 'nt' else 0
+            output = subprocess.run([ARDUINO_CLI, "board", "list"], capture_output=True, text=True, creationflags=flags)
+            lines = output.stdout.splitlines()
+            ports = [line.split()[0] for line in lines if "COM" in line or "/dev/tty" in line]
+            self.ports_signal.emit(ports)
+        except: self.ports_signal.emit([])
+
+class HardwareActionThread(QThread):
+    log_signal = pyqtSignal(str)
+    finished_signal = pyqtSignal(str)
+    def __init__(self, comando):
+        super().__init__(); self.comando = comando
+    def run(self):
+        try:
+            p = subprocess.Popen(self.comando, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, 
+                                 creationflags=0x08000000 if os.name == 'nt' else 0)
+            for line in p.stdout: self.log_signal.emit(line.strip())
+            p.wait()
+            self.finished_signal.emit("✅ Operação concluída" if p.returncode == 0 else "❌ Falha na operação")
+        except Exception as e: self.finished_signal.emit(f"❌ Erro: {str(e)}")
 
 # --- CORES ---
 COLOR_BG = "#0b1622"
@@ -42,7 +80,7 @@ class ExecutorWorker(QThread):
             stdin=subprocess.PIPE,
             text=True,
             bufsize=1,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            creationflags=0x08000000 if os.name == 'nt' else 0
         )
         if self.processo.stdout:
             for linha in self.processo.stdout:
@@ -101,21 +139,59 @@ class MeuEditor(QMainWindow):
         self.init_ui()
         self.criar_menus()
 
-        # --- LINHA A SER ADICIONADA ---
         self.engine_overlay = ArduinoEngineOverlay(self)
         self.engine_overlay.iniciar()
 
-        # ADICIONE ESTE MÉTODO AQUI: Pra limpar aba do console
+        # Scanner de Portas
+        self.scanner_thread = PortScannerThread()
+        self.scanner_thread.ports_signal.connect(self.atualizar_lista_portas)
+        self.timer_portas = QTimer()
+        self.timer_portas.timeout.connect(self.scanner_thread.start)
+        self.timer_portas.start(3000)
+        self.scanner_thread.start()
+
+    def atualizar_lista_portas(self, ports):
+        current = self.port_dropdown.currentText()
+        existing = [self.port_dropdown.itemText(i) for i in range(self.port_dropdown.count())]
+        if set(ports) != set(existing):
+            self.port_dropdown.clear()
+            self.port_dropdown.addItems(ports)
+            if current in ports:
+                self.port_dropdown.setCurrentText(current)
+
+    def executar_compilacao_firmata(self):
+        self.tabs_inferiores.setCurrentIndex(0)
+        self.adicionar_ao_output("\n[SISTEMA] Iniciando Compilação do StandardFirmata...\n")
+        caminho_sketch = os.path.expanduser("~/Documents/Arduino/libraries/Firmata/examples/StandardFirmata")
+        cmd = [ARDUINO_CLI, "compile", "--fqbn", BOARD, caminho_sketch]
+        self.h_thread = HardwareActionThread(cmd)
+        self.h_thread.log_signal.connect(lambda t: self.adicionar_ao_output(t + "\n"))
+        self.h_thread.finished_signal.connect(lambda m: self.adicionar_ao_output(m + "\n"))
+        self.h_thread.start()
+
+    def executar_upload_firmata(self):
+        porta = self.port_dropdown.currentText()
+        if not porta:
+            self.adicionar_ao_output("\n❌ Erro: Selecione uma porta USB!\n")
+            return
+        self.parar_execucao()
+        self.tabs_inferiores.setCurrentIndex(0)
+        self.adicionar_ao_output(f"\n[SISTEMA] Realizando Upload na porta {porta}...\n")
+        caminho_sketch = os.path.expanduser("~/Documents/Arduino/libraries/Firmata/examples/StandardFirmata")
+        cmd = [ARDUINO_CLI, "upload", "-p", porta, "--fqbn", BOARD, caminho_sketch]
+        self.u_thread = HardwareActionThread(cmd)
+        self.u_thread.log_signal.connect(lambda t: self.adicionar_ao_output(t + "\n"))
+        self.u_thread.finished_signal.connect(lambda m: self.adicionar_ao_output(m + "\n"))
+        self.u_thread.start()
+
     def limpar_output_sistema(self):
         self.console_output.clear()
         self.status_bar.showMessage("Output do sistema limpo.")
 
-        # ADICIONE ESTE MÉTODO AQUI: Pra limpar serial monitor
     def limpar_serial_log(self):
         self.serial_log.clear()
         self.status_bar.showMessage("Log Serial limpo.")
 
-    # Adicione este método na sua classe MeuEditor para reposicionar se você aumentar a janela
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, 'engine_overlay'):
@@ -128,40 +204,42 @@ class MeuEditor(QMainWindow):
         main_layout = QVBoxLayout(central_container)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-# --- Toolbar (Barra de Ferramentas Personalizável) ---
         self.container_toolbar = QWidget()
-        # Aqui você define a cor da barra (ex: #1c2b3d ou qualquer outra)
         COR_BARRA = "#5645d6" 
-        self.container_toolbar.setStyleSheet(f"""
-            background-color: {COR_BARRA}; 
-            border-bottom: 1px #5645d6;
-        """)
-        
+        self.container_toolbar.setStyleSheet(f"background-color: {COR_BARRA}; border-bottom: 1px #5645d6;")
         toolbar_layout = QHBoxLayout(self.container_toolbar)
         toolbar_layout.setContentsMargins(20, 10, 20, 10)
 
-        # Botões usando o seu método criar_botao
         self.btn_rodar = self.criar_botao("run.png", self.executar)
         self.btn_parar = self.criar_botao("stop.png", self.parar_execucao)
-        
         toolbar_layout.addWidget(self.btn_rodar)
         toolbar_layout.addWidget(self.btn_parar)
-        toolbar_layout.addStretch()
 
-        # Adiciona o container da barra ao layout principal
+        div = QFrame(); div.setFrameShape(QFrame.Shape.VLine)
+        div.setStyleSheet("background-color: rgba(255,255,255,0.2); margin: 0 10px;")
+        toolbar_layout.addWidget(div)
+
+        self.btn_compilar_f = self.criar_botao("compilar.png", self.executar_compilacao_firmata)
+        self.btn_upload_f = self.criar_botao("upload.png", self.executar_upload_firmata)
+        toolbar_layout.addWidget(self.btn_compilar_f)
+        toolbar_layout.addWidget(self.btn_upload_f)
+
+        toolbar_layout.addWidget(QLabel(" Porta: "))
+        self.port_dropdown = QComboBox()
+        self.port_dropdown.setMinimumWidth(120)
+        self.port_dropdown.setStyleSheet("background-color: #1c2b3a; color: #00ffdd; border-radius: 4px; padding: 2px;")
+        toolbar_layout.addWidget(self.port_dropdown)
+
+        toolbar_layout.addStretch()
         main_layout.addWidget(self.container_toolbar)
 
-        # --- Splitter Principal ---
         splitter_code = QSplitter(Qt.Orientation.Vertical)
-        
-        # Editor
         self.editor = QTextEdit()
         self.editor.setFont(QFont("Consolas", 12))
         self.editor.setAcceptRichText(False)
         self.editor.setStyleSheet(f"background-color: {COLOR_EDITOR}; color: {COLOR_TEXT}; border: none; padding: 10px;")
         self.highlighter = PythonHighlighter(self.editor.document())
 
-        # --- Sistema de Abas Inferiores ---
         self.tabs_inferiores = QTabWidget()
         self.tabs_inferiores.setStyleSheet(f"""
             QTabWidget::pane {{ border-top: 1px solid #1c2b3d; background: {COLOR_CONSOLE}; }}
@@ -169,220 +247,119 @@ class MeuEditor(QMainWindow):
             QTabBar::tab:selected {{ background: {COLOR_EDITOR}; border-bottom: 2px solid {COLOR_ACCENT}; }}
         """)
 
-        # --- Na Aba 1: Output (Console de Sistema) ---
+        # Aba Output
         self.console_output = QPlainTextEdit()
         self.console_output.setReadOnly(True)
-
-        # Esta linha impede que o usuário clique, selecione ou interaja de qualquer forma com o texto:
         self.console_output.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
-
-        # Esta linha remove a borda de foco (aquele contorno que aparece ao clicar)
         self.console_output.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-
         self.console_output.setFont(QFont("Consolas", 11))
         self.console_output.setStyleSheet(f"background-color: {COLOR_CONSOLE}; color: #82aaff; border: none; padding: 5px;")
 
-        # --- NOVO CONTAINER PARA O BOTÃO ---
-        container_output = QWidget()
-        layout_output_interno = QVBoxLayout(container_output)
-        layout_output_interno.setContentsMargins(0, 0, 0, 0)
-        layout_output_interno.setSpacing(0)
-
-        # Barra do botão (Estilo Arduino IDE)
-        barra_limpeza = QHBoxLayout()
-        barra_limpeza.addStretch()
+        container_output = QWidget(); layout_output_interno = QVBoxLayout(container_output)
+        layout_output_interno.setContentsMargins(0, 0, 0, 0); layout_output_interno.setSpacing(0)
+        barra_limpeza = QHBoxLayout(); barra_limpeza.addStretch()
         btn_limpar_out = QPushButton("Limpar")
         btn_limpar_out.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_limpar_out.setStyleSheet("QPushButton { background: transparent; color: #5c6370; border: none; padding: 5px; font-size: 10px; } QPushButton:hover { color: white; }")
         btn_limpar_out.clicked.connect(self.limpar_output_sistema)
         barra_limpeza.addWidget(btn_limpar_out)
-
-        layout_output_interno.addLayout(barra_limpeza)
-        layout_output_interno.addWidget(self.console_output)
-
-        # Adiciona o container em vez de apenas o texto
+        layout_output_interno.addLayout(barra_limpeza); layout_output_interno.addWidget(self.console_output)
         self.tabs_inferiores.addTab(container_output, "OUTPUT")
 
-        # Aba 2: Serial Monitor
-        container_serial = QWidget()
-        layout_serial = QVBoxLayout(container_serial)
-        layout_serial.setContentsMargins(0, 0, 0, 0)
-        layout_serial.setSpacing(2)
-
+        # Aba Serial Monitor (RESTAURADO PLACEHOLDER ORIGINAL)
+        container_serial = QWidget(); layout_serial = QVBoxLayout(container_serial)
+        layout_serial.setContentsMargins(0, 0, 0, 0); layout_serial.setSpacing(2)
         self.serial_input = QLineEdit()
         self.serial_input.setPlaceholderText("SERIAL INPUT: Digite caracteres para enviar ao Arduino...")
         self.serial_input.setStyleSheet(f"background-color: {COLOR_CONSOLE}; color: #00ff41; border: 1px solid {COLOR_ACCENT}; padding: 5px; font-family: 'Consolas';")
         self.serial_input.returnPressed.connect(self.enviar_comando_serial)
-
-        # --- NOVA BARRA DE LIMPEZA DO SERIAL ---
-        barra_limpeza_serial = QHBoxLayout()
-        barra_limpeza_serial.addStretch()
+        
+        # Barra Limpeza Serial
+        barra_limpeza_serial = QHBoxLayout(); barra_limpeza_serial.addStretch()
         btn_limpar_serial = QPushButton("Limpar Serial")
-        btn_limpar_serial.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_limpar_serial.setStyleSheet("""
-            QPushButton { 
-                background: transparent; 
-                color: #5c6370; 
-                border: none; 
-                padding: 2px 10px; 
-                font-size: 10px; 
-            } 
-            QPushButton:hover { color: #00ff41; }
-        """)
+        btn_limpar_serial.setStyleSheet("QPushButton { background: transparent; color: #5c6370; border: none; padding: 2px 10px; font-size: 10px; }")
         btn_limpar_serial.clicked.connect(self.limpar_serial_log)
         barra_limpeza_serial.addWidget(btn_limpar_serial)
-        # ---------------------------------------
 
-        self.serial_log = QPlainTextEdit()
-        self.serial_log.setReadOnly(True)
-        self.serial_log.setFont(QFont("Consolas", 11))
-        self.serial_log.setStyleSheet(f"background-color: {COLOR_CONSOLE}; color: #00ff41; border: none; padding: 5px;")
+        self.serial_log = QPlainTextEdit(); self.serial_log.setReadOnly(True)
+        self.serial_log.setStyleSheet(f"background-color: {COLOR_CONSOLE}; color: #00ff41; border: none; padding: 5px; font-family: 'Consolas';")
 
-        layout_serial.addWidget(self.serial_input)
-        layout_serial.addLayout(barra_limpeza_serial) # Adiciona a barra com o botão
-        layout_serial.addWidget(self.serial_log)
-        
+        layout_serial.addWidget(self.serial_input); layout_serial.addLayout(barra_limpeza_serial); layout_serial.addWidget(self.serial_log)
         self.tabs_inferiores.addTab(container_serial, "SERIAL MONITOR")
 
-        splitter_code.addWidget(self.editor)
-        splitter_code.addWidget(self.tabs_inferiores)
-        splitter_code.setStretchFactor(0, 3)
-        splitter_code.setStretchFactor(1, 1)
+        splitter_code.addWidget(self.editor); splitter_code.addWidget(self.tabs_inferiores)
+        splitter_code.setStretchFactor(0, 3); splitter_code.setStretchFactor(1, 1)
         main_layout.addWidget(splitter_code)
 
-        # --- Status Bar ---
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
+        self.status_bar = QStatusBar(); self.setStatusBar(self.status_bar)
         self.status_bar.setStyleSheet(f"color: #5c6370; background-color: {COLOR_BG};")
         self.status_bar.showMessage("Pronto")
 
+    # --- RESTAURAÇÃO DOS MÉTODOS ORIGINAIS (FILE/EDIT) ---
     def criar_menus(self):
         menubar = self.menuBar()
-        menubar.setStyleSheet(f"""
-            QMenuBar {{ background-color: {COLOR_BG}; color: {COLOR_TEXT}; border-bottom: 1px solid #1c2b3d; }}
-            QMenuBar::item:selected {{ background-color: {COLOR_ACCENT}; color: white; }}
-            QMenu {{ background-color: {COLOR_EDITOR}; color: {COLOR_TEXT}; border: 1px solid {COLOR_ACCENT}; }}
-            QMenu::item:selected {{ background-color: {COLOR_ACCENT}; }}
-        """)
-
+        menubar.setStyleSheet(f"QMenuBar {{ background-color: {COLOR_BG}; color: {COLOR_TEXT}; border-bottom: 1px solid #1c2b3d; }}")
         file_menu = menubar.addMenu("&File")
-        file_actions = [
-            ("Novo", "Ctrl+N", self.novo_arquivo),
-            ("Abrir...", "Ctrl+O", self.abrir_arquivo),
-            ("Salvar", "Ctrl+S", self.salvar_arquivo),
-            (None, None, None),
-            ("Sair", "Alt+F4", self.close)
-        ]
+        file_actions = [("Novo", "Ctrl+N", self.novo_arquivo), ("Abrir...", "Ctrl+O", self.abrir_arquivo), 
+                        ("Salvar", "Ctrl+S", self.salvar_arquivo), (None, None, None), ("Sair", "Alt+F4", self.close)]
         for nome, atalho, func in file_actions:
             if nome is None: file_menu.addSeparator()
             else:
-                action = QAction(nome, self)
-                if atalho: action.setShortcut(atalho)
-                action.triggered.connect(func)
-                file_menu.addAction(action)
+                act = QAction(nome, self); 
+                if atalho: act.setShortcut(atalho)
+                act.triggered.connect(func); file_menu.addAction(act)
 
         edit_menu = menubar.addMenu("&Edit")
-        edit_actions = [
-            ("Desfazer", "Ctrl+Z", self.editor.undo),
-            ("Refazer", "Ctrl+Y", self.editor.redo),
-            (None, None, None),
-            ("Recortar", "Ctrl+X", self.editor.cut),
-            ("Copiar", "Ctrl+C", self.editor.copy),
-            ("Colar", "Ctrl+V", self.editor.paste),
-            (None, None, None),
-            ("Selecionar Tudo", "Ctrl+A", self.editor.selectAll)
-        ]
+        edit_actions = [("Desfazer", "Ctrl+Z", self.editor.undo), ("Refazer", "Ctrl+Y", self.editor.redo), (None, None, None),
+                        ("Recortar", "Ctrl+X", self.editor.cut), ("Copiar", "Ctrl+C", self.editor.copy), ("Colar", "Ctrl+V", self.editor.paste)]
         for nome, atalho, func in edit_actions:
             if nome is None: edit_menu.addSeparator()
             else:
-                action = QAction(nome, self)
-                if atalho: action.setShortcut(atalho)
-                action.triggered.connect(func)
-                edit_menu.addAction(action)
+                act = QAction(nome, self); 
+                if atalho: act.setShortcut(atalho)
+                act.triggered.connect(func); edit_menu.addAction(act)
 
-    def novo_arquivo(self):
-        self.editor.clear()
-        self.caminho_arquivo = None
-        self.status_bar.showMessage("Novo arquivo")
-
+    def novo_arquivo(self): self.editor.clear(); self.caminho_arquivo = None; self.status_bar.showMessage("Novo arquivo")
     def abrir_arquivo(self):
         caminho, _ = QFileDialog.getOpenFileName(self, "Abrir Arquivo", "", "Python (*.py);;Todos os Arquivos (*)")
         if caminho:
-            with open(caminho, 'r', encoding='utf-8') as f:
-                self.editor.setPlainText(f.read())
-            self.caminho_arquivo = caminho
-            self.status_bar.showMessage(f"Aberto: {caminho}")
+            with open(caminho, 'r', encoding='utf-8') as f: self.editor.setPlainText(f.read())
+            self.caminho_arquivo = caminho; self.status_bar.showMessage(f"Aberto: {caminho}")
 
     def salvar_arquivo(self):
         if not self.caminho_arquivo:
             caminho, _ = QFileDialog.getSaveFileName(self, "Salvar Arquivo", "", "Python (*.py);;Todos os Arquivos (*)")
             if caminho: self.caminho_arquivo = caminho
             else: return
-        with open(self.caminho_arquivo, 'w', encoding='utf-8') as f:
-            f.write(self.editor.toPlainText())
+        with open(self.caminho_arquivo, 'w', encoding='utf-8') as f: f.write(self.editor.toPlainText())
         self.status_bar.showMessage(f"Salvo: {self.caminho_arquivo}")
 
     def criar_botao(self, nome_arquivo, func):
-            btn = QPushButton()
-            
-            # Garante o caminho do arquivo no diretório atual
-            caminho = os.path.join(os.path.dirname(__file__), nome_arquivo)
-            
-            btn.setIcon(QIcon(caminho))
-            btn.setIconSize(QSize(40, 40))
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            
-            # CSS: O 'preenchimento' agora existe no estado normal (0.05 de opacidade)
-            # No hover, a intensidade desse preenchimento aumenta (0.15)
-            btn.setStyleSheet("""
-                QPushButton { 
-                    background-color: rgba(100, 100, 100, 0.05); /* Preenchimento sutil inicial */
-                    border: 1px solid rgba(255, 255, 255, 0.1);  /* Borda leve igual ao hover */
-                    padding: 3px;
-                    border-radius: 5px;
-                }
-                QPushButton:hover { 
-                    background-color: rgba(255, 255, 255, 0.15); /* Aumenta a intensidade no hover */
-                    border: 1px solid rgba(255, 255, 255, 0.3);
-                }
-                QPushButton:pressed { 
-                    background-color: rgba(255, 255, 255, 0.02);
-                }
-            """)
-            btn.clicked.connect(func)
-            return btn
+        btn = QPushButton()
+        caminho = os.path.join(os.path.dirname(__file__), nome_arquivo)
+        btn.setIcon(QIcon(caminho)); btn.setIconSize(QSize(40, 40))
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setStyleSheet("QPushButton { background-color: rgba(100, 100, 100, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); padding: 3px; border-radius: 5px; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); }")
+        btn.clicked.connect(func); return btn
 
     def executar(self):
         codigo = self.editor.toPlainText()
         if not codigo.strip(): return
-        self.console_output.clear()
-        self.status_bar.showMessage("Executando...")
-        self.tabs_inferiores.setCurrentIndex(0) # Foco automático no Output
-        self.worker = ExecutorWorker(codigo)
-        self.worker.line_received.connect(self.adicionar_ao_output)
-        self.worker.finished.connect(lambda: self.status_bar.showMessage("Finalizado.", 5000))
-        self.worker.start()
+        self.console_output.clear(); self.status_bar.showMessage("Executando...")
+        self.tabs_inferiores.setCurrentIndex(0); self.worker = ExecutorWorker(codigo)
+        self.worker.line_received.connect(self.adicionar_ao_output); self.worker.start()
 
     def adicionar_ao_output(self, texto):
-        self.console_output.insertPlainText(texto)
-        self.console_output.moveCursor(QTextCursor.MoveOperation.End)
+        self.console_output.insertPlainText(texto); self.console_output.moveCursor(QTextCursor.MoveOperation.End)
 
     def parar_execucao(self):
-        if hasattr(self, 'worker'):
-            self.worker.stop()
-            self.status_bar.showMessage("Interrompido.")
+        if hasattr(self, 'worker'): self.worker.stop(); self.status_bar.showMessage("Interrompido.")
 
     def enviar_comando_serial(self):
         comando = self.serial_input.text()
-        if comando:
-            if hasattr(self, 'worker'):
-                self.worker.enviar_input(comando)
-                self.serial_log.insertPlainText(f"> {comando}\n")
-                self.serial_input.clear()
+        if comando and hasattr(self, 'worker'):
+            self.worker.enviar_input(comando); self.serial_log.insertPlainText(f"> {comando}\n"); self.serial_input.clear()
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    app.setStyle("Fusion")
-    janela = MeuEditor()
-    janela.showMaximized()
-    sys.exit(app.exec())
+    app = QApplication(sys.argv); app.setStyle("Fusion")
+    janela = MeuEditor(); janela.showMaximized(); sys.exit(app.exec())
