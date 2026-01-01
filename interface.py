@@ -5,8 +5,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QTextEdit,
                              QPushButton, QVBoxLayout, QHBoxLayout, QWidget, 
                              QSplitter, QPlainTextEdit, QStatusBar, QFileDialog, QLineEdit, QTabWidget)
 from PyQt6.QtGui import (QFont, QSyntaxHighlighter, QTextCharFormat, QColor, 
-                         QTextCursor, QAction)
-from PyQt6.QtCore import Qt, QRegularExpression, QThread, pyqtSignal
+                         QTextCursor, QAction, QIcon) # Adicionado QIcon
+from PyQt6.QtCore import Qt, QRegularExpression, QThread, pyqtSignal, QSize # Adicionado QSize
 
 from arduino_engine import ArduinoEngineOverlay # <--- Adicione esta linha
 
@@ -118,15 +118,28 @@ class MeuEditor(QMainWindow):
         main_layout = QVBoxLayout(central_container)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # --- Toolbar ---
-        toolbar = QHBoxLayout()
-        toolbar.setContentsMargins(20, 10, 20, 10)
-        self.btn_rodar = self.criar_botao("▶ RUN", self.executar, "#158845")
-        self.btn_parar = self.criar_botao("⏹ STOP", self.parar_execucao, "#74362F")
-        toolbar.addWidget(self.btn_rodar)
-        toolbar.addWidget(self.btn_parar)
-        toolbar.addStretch()
-        main_layout.addLayout(toolbar)
+# --- Toolbar (Barra de Ferramentas Personalizável) ---
+        self.container_toolbar = QWidget()
+        # Aqui você define a cor da barra (ex: #1c2b3d ou qualquer outra)
+        COR_BARRA = "#5645d6" 
+        self.container_toolbar.setStyleSheet(f"""
+            background-color: {COR_BARRA}; 
+            border-bottom: 1px #5645d6;
+        """)
+        
+        toolbar_layout = QHBoxLayout(self.container_toolbar)
+        toolbar_layout.setContentsMargins(20, 10, 20, 10)
+
+        # Botões usando o seu método criar_botao
+        self.btn_rodar = self.criar_botao("run.png", self.executar)
+        self.btn_parar = self.criar_botao("stop.png", self.parar_execucao)
+        
+        toolbar_layout.addWidget(self.btn_rodar)
+        toolbar_layout.addWidget(self.btn_parar)
+        toolbar_layout.addStretch()
+
+        # Adiciona o container da barra ao layout principal
+        main_layout.addWidget(self.container_toolbar)
 
         # --- Splitter Principal ---
         splitter_code = QSplitter(Qt.Orientation.Vertical)
@@ -251,15 +264,35 @@ class MeuEditor(QMainWindow):
             f.write(self.editor.toPlainText())
         self.status_bar.showMessage(f"Salvo: {self.caminho_arquivo}")
 
-    def criar_botao(self, texto, func, cor):
-        btn = QPushButton(texto)
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.setStyleSheet(f"""
-            QPushButton {{ background-color: {cor}; color: white; font-weight: bold; padding: 6px 15px; border-radius: 4px; border: none; }}
-            QPushButton:hover {{ background-color: white; color: {cor}; }}
-        """)
-        btn.clicked.connect(func)
-        return btn
+    def criar_botao(self, nome_arquivo, func):
+            btn = QPushButton()
+            
+            # Garante o caminho do arquivo no diretório atual
+            caminho = os.path.join(os.path.dirname(__file__), nome_arquivo)
+            
+            btn.setIcon(QIcon(caminho))
+            btn.setIconSize(QSize(40, 40))
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            
+            # CSS: O 'preenchimento' agora existe no estado normal (0.05 de opacidade)
+            # No hover, a intensidade desse preenchimento aumenta (0.15)
+            btn.setStyleSheet("""
+                QPushButton { 
+                    background-color: rgba(100, 100, 100, 0.05); /* Preenchimento sutil inicial */
+                    border: 1px solid rgba(255, 255, 255, 0.1);  /* Borda leve igual ao hover */
+                    padding: 3px;
+                    border-radius: 5px;
+                }
+                QPushButton:hover { 
+                    background-color: rgba(255, 255, 255, 0.15); /* Aumenta a intensidade no hover */
+                    border: 1px solid rgba(255, 255, 255, 0.3);
+                }
+                QPushButton:pressed { 
+                    background-color: rgba(255, 255, 255, 0.02);
+                }
+            """)
+            btn.clicked.connect(func)
+            return btn
 
     def executar(self):
         codigo = self.editor.toPlainText()
