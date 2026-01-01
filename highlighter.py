@@ -4,11 +4,17 @@ from PyQt6.QtCore import Qt, QRect, QSize, QRegularExpression, QTimer
 
 # --- 1. CLASSE DO HIGHLIGHTER ---
 class PythonHighlighter(QSyntaxHighlighter):
+
     def __init__(self, document):
         super().__init__(document)
-        self.rules = []
+        # 1. Primeiro criamos a lista para ela estar pronta
+        self.rules = [] 
 
-        # Paleta de Cores
+        # 2. Agora injetamos as regras do Firmata (importando aqui mesmo)
+        import firmata_syntax
+        self.rules.extend(firmata_syntax.get_firmata_rules())
+
+        # 3. Definição das Cores e Formatos
         fmt_keyword = self.create_format("#c678dd", bold=True)
         fmt_value = self.create_format("#d19a66") # Laranja
         fmt_builtin = self.create_format("#56b6c2", italic=True)
@@ -17,14 +23,18 @@ class PythonHighlighter(QSyntaxHighlighter):
         fmt_comment = self.create_format("#5c6370")
         fmt_decorator = self.create_format("#e5c07b")
 
-        # Regras de Sintaxe
+        # 4. Regras de Sintaxe Padrão (Python)
         keywords = ["and", "as", "assert", "break", "class", "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while", "with", "yield", "self"]
-        for word in keywords: self.rules.append((QRegularExpression(f"\\b{word}\\b"), fmt_keyword))
+        for word in keywords:
+            self.rules.append((QRegularExpression(f"\\b{word}\\b"), fmt_keyword))
         
         values = ["True", "False", "None"]
-        for word in values: self.rules.append((QRegularExpression(f"\\b{word}\\b"), fmt_value))
+        for word in values:
+            self.rules.append((QRegularExpression(f"\\b{word}\\b"), fmt_value))
         
         self.rules.append((QRegularExpression(r"\b[0-9]+\.?[0-9]*\b"), fmt_value))
+
+        # ... (segue o restante do seu código)
         
         builtins = ["print", "input", "len", "range", "list", "dict", "int", "str", "float", "bool"]
         for word in builtins: self.rules.append((QRegularExpression(f"\\b{word}\\b"), fmt_builtin))
