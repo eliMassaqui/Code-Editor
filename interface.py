@@ -105,6 +105,16 @@ class MeuEditor(QMainWindow):
         self.engine_overlay = ArduinoEngineOverlay(self)
         self.engine_overlay.iniciar()
 
+        # ADICIONE ESTE MÉTODO AQUI: Pra limpar aba do console
+    def limpar_output_sistema(self):
+        self.console_output.clear()
+        self.status_bar.showMessage("Output do sistema limpo.")
+
+        # ADICIONE ESTE MÉTODO AQUI: Pra limpar serial monitor
+    def limpar_serial_log(self):
+        self.serial_log.clear()
+        self.status_bar.showMessage("Log Serial limpo.")
+
     # Adicione este método na sua classe MeuEditor para reposicionar se você aumentar a janela
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -159,12 +169,39 @@ class MeuEditor(QMainWindow):
             QTabBar::tab:selected {{ background: {COLOR_EDITOR}; border-bottom: 2px solid {COLOR_ACCENT}; }}
         """)
 
-        # Aba 1: Output (Console de Sistema)
+        # --- Na Aba 1: Output (Console de Sistema) ---
         self.console_output = QPlainTextEdit()
         self.console_output.setReadOnly(True)
+
+        # Esta linha impede que o usuário clique, selecione ou interaja de qualquer forma com o texto:
+        self.console_output.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+
+        # Esta linha remove a borda de foco (aquele contorno que aparece ao clicar)
+        self.console_output.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
         self.console_output.setFont(QFont("Consolas", 11))
         self.console_output.setStyleSheet(f"background-color: {COLOR_CONSOLE}; color: #82aaff; border: none; padding: 5px;")
-        self.tabs_inferiores.addTab(self.console_output, "OUTPUT")
+
+        # --- NOVO CONTAINER PARA O BOTÃO ---
+        container_output = QWidget()
+        layout_output_interno = QVBoxLayout(container_output)
+        layout_output_interno.setContentsMargins(0, 0, 0, 0)
+        layout_output_interno.setSpacing(0)
+
+        # Barra do botão (Estilo Arduino IDE)
+        barra_limpeza = QHBoxLayout()
+        barra_limpeza.addStretch()
+        btn_limpar_out = QPushButton("Limpar")
+        btn_limpar_out.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_limpar_out.setStyleSheet("QPushButton { background: transparent; color: #5c6370; border: none; padding: 5px; font-size: 10px; } QPushButton:hover { color: white; }")
+        btn_limpar_out.clicked.connect(self.limpar_output_sistema)
+        barra_limpeza.addWidget(btn_limpar_out)
+
+        layout_output_interno.addLayout(barra_limpeza)
+        layout_output_interno.addWidget(self.console_output)
+
+        # Adiciona o container em vez de apenas o texto
+        self.tabs_inferiores.addTab(container_output, "OUTPUT")
 
         # Aba 2: Serial Monitor
         container_serial = QWidget()
@@ -177,13 +214,34 @@ class MeuEditor(QMainWindow):
         self.serial_input.setStyleSheet(f"background-color: {COLOR_CONSOLE}; color: #00ff41; border: 1px solid {COLOR_ACCENT}; padding: 5px; font-family: 'Consolas';")
         self.serial_input.returnPressed.connect(self.enviar_comando_serial)
 
+        # --- NOVA BARRA DE LIMPEZA DO SERIAL ---
+        barra_limpeza_serial = QHBoxLayout()
+        barra_limpeza_serial.addStretch()
+        btn_limpar_serial = QPushButton("Limpar Serial")
+        btn_limpar_serial.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_limpar_serial.setStyleSheet("""
+            QPushButton { 
+                background: transparent; 
+                color: #5c6370; 
+                border: none; 
+                padding: 2px 10px; 
+                font-size: 10px; 
+            } 
+            QPushButton:hover { color: #00ff41; }
+        """)
+        btn_limpar_serial.clicked.connect(self.limpar_serial_log)
+        barra_limpeza_serial.addWidget(btn_limpar_serial)
+        # ---------------------------------------
+
         self.serial_log = QPlainTextEdit()
         self.serial_log.setReadOnly(True)
         self.serial_log.setFont(QFont("Consolas", 11))
         self.serial_log.setStyleSheet(f"background-color: {COLOR_CONSOLE}; color: #00ff41; border: none; padding: 5px;")
 
         layout_serial.addWidget(self.serial_input)
+        layout_serial.addLayout(barra_limpeza_serial) # Adiciona a barra com o botão
         layout_serial.addWidget(self.serial_log)
+        
         self.tabs_inferiores.addTab(container_serial, "SERIAL MONITOR")
 
         splitter_code.addWidget(self.editor)
