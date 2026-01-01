@@ -12,8 +12,11 @@ from PyQt6.QtCore import Qt, QRegularExpression, QThread, pyqtSignal, QSize, QTi
 from arduino_engine import ArduinoEngineOverlay 
 from firmata_manager import FirmataManager # Importado para o gerenciamento
 
-from firmata_ui import FirmataCardOverlay
+# --- "Cérebro visual" do editor ---
+from highlighter import PythonHighlighter
 
+
+from firmata_ui import FirmataCardOverlay
 # --- IMPORTAÇÃO DA CONFIGURAÇÃO EXTERNA ---
 try:
     from config_inicial import inicializar_ambiente_wandi
@@ -80,35 +83,6 @@ class ExecutorWorker(QThread):
                 self.processo.stdin.flush()
             except Exception as e:
                 self.line_received.emit(f"\nErro de Input: {str(e)}\n")
-
-# --- HIGHLIGHTER ---
-class PythonHighlighter(QSyntaxHighlighter):
-    def __init__(self, document):
-        super().__init__(document)
-        self.rules = []
-        kw_format = QTextCharFormat()
-        kw_format.setForeground(QColor("#56b6c2"))
-        kw_format.setFontWeight(QFont.Weight.Bold)
-        keywords = ["def", "class", "if", "else", "elif", "for", "while", "return", 
-                    "import", "from", "print", "input", "try", "except", "with", "as"]
-        for word in keywords:
-            self.rules.append((QRegularExpression(f"\\b{word}\\b"), kw_format))
-        
-        str_format = QTextCharFormat()
-        str_format.setForeground(QColor("#98c379"))
-        self.rules.append((QRegularExpression(r"\".*\""), str_format))
-        self.rules.append((QRegularExpression(r"'.*'"), str_format))
-        
-        comm_format = QTextCharFormat()
-        comm_format.setForeground(QColor("#5c6370"))
-        self.rules.append((QRegularExpression(r"#.*"), comm_format))
-
-    def highlightBlock(self, text):
-        for pattern, fmt in self.rules:
-            it = pattern.globalMatch(text)
-            while it.hasNext():
-                match = it.next()
-                self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
 
 # --- JANELA PRINCIPAL ---
 class MeuEditor(QMainWindow):
