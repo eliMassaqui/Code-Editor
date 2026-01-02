@@ -104,7 +104,7 @@ class MeuEditor(QMainWindow):
         
         # INICIALIZA O GERENCIADOR
         self.firmata = FirmataManager(BOARD)
-        self.firmata.log_received.connect(self.adicionar_ao_output)
+        self.firmata.log_received.connect(self.log_serial_arduino)
 
         self.init_ui()
         
@@ -424,16 +424,35 @@ class MeuEditor(QMainWindow):
         self.tabs_inferiores.setCurrentIndex(0); self.worker = ExecutorWorker(codigo)
         self.worker.line_received.connect(self.adicionar_ao_output); self.worker.start()
 
+    # PONTO SEGURO PARA ALTERAÇÃO: Melhora o scroll do console de sistema
     def adicionar_ao_output(self, texto):
-        self.console_output.insertPlainText(texto); self.console_output.moveCursor(QTextCursor.MoveOperation.End)
+        self.console_output.moveCursor(QTextCursor.MoveOperation.End)
+        self.console_output.insertPlainText(texto)
+        self.console_output.moveCursor(QTextCursor.MoveOperation.End)
 
     def parar_execucao(self):
         if hasattr(self, 'worker'): self.worker.stop(); self.status_bar.showMessage("Interrompido.")
 
+    # PONTO SEGURO PARA ALTERAÇÃO: Garante o autoscroll no Serial Monitor
+    def log_serial_arduino(self, texto):
+        # ATENÇÃO: Move o cursor para o final para garantir que o scroll acompanhe o texto
+        self.serial_log.moveCursor(QTextCursor.MoveOperation.End)
+        self.serial_log.insertPlainText(texto)
+        self.serial_log.moveCursor(QTextCursor.MoveOperation.End)
+
+    # PONTO SEGURO PARA ALTERAÇÃO: Melhora a lógica de envio de comandos
     def enviar_comando_serial(self):
         comando = self.serial_input.text()
-        if comando and hasattr(self, 'worker'):
-            self.worker.enviar_input(comando); self.serial_log.insertPlainText(f"> {comando}\n"); self.serial_input.clear()
+        if not comando:
+            return
+
+        if hasattr(self, 'worker') and self.worker.isRunning():
+            self.worker.enviar_input(comando)
+            # Adiciona um marcador visual no log para comandos enviados pelo usuário
+            self.log_serial_arduino(f"TX >> {comando}\n")
+            self.serial_input.clear()
+        else:
+            self.status_bar.showMessage("Erro: O código precisa estar rodando para enviar Serial.")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv); app.setStyle("Fusion")
