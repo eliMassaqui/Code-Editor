@@ -137,12 +137,20 @@ class MeuEditor(QMainWindow):
 
     def atualizar_lista_portas(self, ports):
         current = self.port_dropdown.currentText()
+        # Captura o que já existe no combo para comparar
         existing = [self.port_dropdown.itemText(i) for i in range(self.port_dropdown.count())]
+        
+        # INDENTAR SEMPRE: Só altera se a lista de portas mudar de fato
         if set(ports) != set(existing):
             self.port_dropdown.clear()
-            self.port_dropdown.addItems(ports)
-            if current in ports:
-                self.port_dropdown.setCurrentText(current)
+            
+            if not ports:
+                # # PONTO SEGURO PARA ALTERAÇÃO: Reinserte a mensagem se não houver placa
+                self.port_dropdown.addItem("BUSCANDO PLACA")
+            else:
+                self.port_dropdown.addItems(ports)
+                if current in ports:
+                    self.port_dropdown.setCurrentText(current)
 
     def executar_compilacao_firmata(self):
         """Abre o card flutuante para escolha do tipo."""
@@ -233,6 +241,7 @@ class MeuEditor(QMainWindow):
                 border: 1px solid white;
             }}
         """)
+
         toolbar_layout.addWidget(self.port_dropdown)
         self.port_dropdown.addItem("BUSCANDO PLACA")
 
