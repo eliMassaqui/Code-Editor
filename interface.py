@@ -86,7 +86,6 @@ class ExecutorWorker(QThread):
                 self.line_received.emit(f"\nErro de Input: {str(e)}\n")
 
 # --- JANELA PRINCIPAL ---
-# --- JANELA PRINCIPAL ---
 class MeuEditor(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -128,6 +127,13 @@ class MeuEditor(QMainWindow):
         self.timer_portas.timeout.connect(self.scanner_thread.start)
         self.timer_portas.start(3000)
         self.scanner_thread.start()
+
+                # No final do __init__ do MeuEditor:
+        caminho_padrao = os.path.join(self.caminho_wandi, "Wandi.py")
+        if os.path.exists(caminho_padrao):
+            with open(caminho_padrao, 'r', encoding='utf-8') as f:
+                self.editor.setPlainText(f.read())
+            self.caminho_arquivo = caminho_padrao
 
     def atualizar_lista_portas(self, ports):
         current = self.port_dropdown.currentText()

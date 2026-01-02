@@ -12,57 +12,31 @@ def inicializar_ambiente_wandi():
         os.makedirs(pasta_code, exist_ok=True)
     
     # Caminho do arquivo padrão
-    arquivo_py = os.path.join(pasta_code, "wandicode.py")
+    arquivo_py = os.path.join(pasta_code, "Wandi.py")
     
-    # Conteúdo do código para o Arduino
-    codigo_arduino = """from pyfirmata2 import Arduino
-import time
+    # PONTO SEGURO PARA ALTERAÇÃO: Template de inicialização (Estilo Arduino IDE)
+    codigo_arduino = """import time
+from pyfirmata2 import Arduino
 
-def conectar_arduino():
-    print("\\n[ BUSCANDO ] Procurando Arduino...")
-    try:
-        board = Arduino(Arduino.AUTODETECT)
-        time.sleep(2)
-        print("[ OK ] Arduino conectado!")
-        return board
-    except Exception as e:
-        raise e
+# Configuração da placa
+board = Arduino(Arduino.AUTODETECT)
 
-def piscar_led(board):
-    led = board.get_pin('d:13:o')
-    print("[ RODANDO ] Pisca-pisca iniciado (Ctrl + C para sair)\\n")
+def setup():
+    # Coloque seu código de configuração aqui, para rodar uma vez:
+    pass
 
-    while True:
-        led.write(1)
-        print("LED LIGADO")
-        time.sleep(1)
+def loop():
+    # Coloque seu código principal aqui, para rodar repetidamente:
+    pass
 
-        led.write(0)
-        print("LED DESLIGADO")
-        time.sleep(1)
-
+# Execução
 if __name__ == "__main__":
+    setup()
     while True:
-        board = None
-        try:
-            board = conectar_arduino()
-            piscar_led(board)
-
-        except KeyboardInterrupt:
-            print("\\n[ SAÍDA ] Programa finalizado pelo usuário.")
-            break
-
-        except Exception:
-            print("\\n[ ERRO ] Arduino desconectado. Tentando novamente em 3s...")
-            time.sleep(3)
-
-        finally:
-            if board:
-                board.exit()
-                print("[ INFO ] Conexão encerrada com segurança.")
+        loop()
 """
 
-    # Cria o arquivo apenas se ele não existir (evita sobrescrever alterações do usuário)
+    # Cria o arquivo apenas se ele não existir
     if not os.path.exists(arquivo_py):
         with open(arquivo_py, "w", encoding="utf-8") as f:
             f.write(codigo_arduino)
