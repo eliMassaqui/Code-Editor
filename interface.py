@@ -212,14 +212,15 @@ class MeuEditor(QMainWindow):
 
         toolbar_layout.addWidget(QLabel(" Porta: "))
         self.port_dropdown = QComboBox()
-        self.port_dropdown.setMinimumWidth(120)
+        self.port_dropdown.setMinimumWidth(150)
+        self.port_dropdown.setFixedHeight(45) # Altura maior para o combo fechado
         self.port_dropdown.setStyleSheet(f"""
             QComboBox {{
                 background-color: {COLOR_DEEP_BLUE};
                 color: #00ffdd;
                 border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: 4px;
-                padding: 2px 10px;
+                padding: 2px 15px;
             }}
             QComboBox:focus, QComboBox:on {{
                 border: 1px solid white;
@@ -233,6 +234,7 @@ class MeuEditor(QMainWindow):
             }}
         """)
         toolbar_layout.addWidget(self.port_dropdown)
+        self.port_dropdown.addItem("BUSCANDO PLACA")
 
         toolbar_layout.addStretch()
         main_layout.addWidget(self.container_toolbar)
