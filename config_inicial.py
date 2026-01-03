@@ -17,8 +17,6 @@ def inicializar_ambiente_wandi():
     # PONTO SEGURO PARA ALTERAÇÃO: Template de inicialização (Estilo Arduino IDE)
     codigo_arduino = """import time
 from pyfirmata2 import Arduino
-
-# Configuração da placa
 board = Arduino(Arduino.AUTODETECT)
 
 def setup():
@@ -29,11 +27,9 @@ def loop():
     # Coloque seu código principal aqui, para rodar repetidamente:
     pass
 
-# Execução
-if __name__ == "__main__":
+    # Execução
     setup()
-    while True:
-        loop()
+    while True: loop()
 """
 
     # Cria o arquivo apenas se ele não existir
